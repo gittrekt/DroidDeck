@@ -23,7 +23,7 @@ mv /etc/pacman.d/mirrorlist.new /etc/pacman.d/mirrorlist
 
 pacman -Sy --noconfirm --needed \
   git zstd binutils cmake ninja meson \
-  python python-mako python-yaml python-pyparsing \
+  python python-mako python-yaml python-pyparsing python-packaging \
   bison flex pkgconf \
   libdrm wayland wayland-protocols \
   libx11 libxcb libxrandr libxshmfence
