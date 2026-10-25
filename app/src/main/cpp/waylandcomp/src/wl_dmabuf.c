@@ -105,9 +105,10 @@ static const struct zwp_linux_dmabuf_v1_interface dmabuf_impl = {
 };
 #define DMABUF_NFMT_MAX 6
 #define DMABUF_NFMT_SDR 4
-#define DMABUF_NMOD 4
+#define DMABUF_NMOD 16
 #define DRM_ABGR2101010 FOURCC('A', 'B', '3', '0')
 #define DRM_XBGR2101010 FOURCC('X', 'B', '3', '0')
+volatile int g_afbc = 1;
 static struct { uint32_t fmt; uint64_t mods[DMABUF_NMOD]; int n; } g_dmabuf_fmts[DMABUF_NFMT_MAX] = {
     {DRM_ARGB8888}, {DRM_XRGB8888}, {DRM_ABGR8888}, {DRM_XBGR8888}, {DRM_ABGR2101010}, {DRM_XBGR2101010}};
 static int g_dmabuf_nfmt = DMABUF_NFMT_SDR;
@@ -115,7 +116,10 @@ static int g_dmabuf_fmts_ready;
 static void dmabuf_build_feedback(void);
 
 static void dmabuf_build_formats(void) {
-    char line[320];
+    const char *afbc_env = getenv("DROIDDECK_WAYLAND_AFBC");
+    if (afbc_env && strcmp(afbc_env, "0") == 0) g_afbc = 0;
+
+    char line[1024];
     int pos = 0, compressed = 0;
     g_dmabuf_fmts_ready = 1;
     g_dmabuf_nfmt = droiddeck_color_hdr_open() ? DMABUF_NFMT_MAX : DMABUF_NFMT_SDR;
@@ -126,8 +130,9 @@ static void dmabuf_build_formats(void) {
         for (int i = 0; i < n && k < DMABUF_NMOD - 1; i++) {
             if (got[i] == MOD_LINEAR) continue;
             if (got[i] == VKP_MOD_QCOM_COMPRESSED && !g_ubwc) continue;
+            if (DRM_FORMAT_MOD_ARM_IS_AFBC(got[i]) && !g_afbc) continue;
             g_dmabuf_fmts[f].mods[k++] = got[i];
-            if (got[i] == VKP_MOD_QCOM_COMPRESSED) compressed++;
+            if (got[i] == VKP_MOD_QCOM_COMPRESSED || DRM_FORMAT_MOD_ARM_IS_AFBC(got[i])) compressed++;
         }
         g_dmabuf_fmts[f].mods[k++] = MOD_INVALID;
         g_dmabuf_fmts[f].n = k;
@@ -139,19 +144,23 @@ static void dmabuf_build_formats(void) {
                             vkp_modifier_name(g_dmabuf_fmts[f].mods[i]));
         if (pos >= (int)sizeof(line)) pos = (int)sizeof(line) - 1;
     }
-    droiddeck_log("dmabuf", "formats: %s%s", line,
-               !g_ubwc ? " (DROIDDECK_WAYLAND_UBWC=0: qcom_compressed not advertised)" : "");
-    if (g_ubwc && !compressed)
-        droiddeck_log("dmabuf", "the compositor's driver (%s) reports no importable qcom_compressed layout: "
+    droiddeck_log("dmabuf", "formats: %s%s%s", line,
+               !g_ubwc ? " (DROIDDECK_WAYLAND_UBWC=0: qcom_compressed not advertised)" : "",
+               !g_afbc ? " (DROIDDECK_WAYLAND_AFBC=0: arm_afbc not advertised)" : "");
+    if ((g_ubwc || g_afbc) && !compressed)
+        droiddeck_log("dmabuf", "the compositor's driver (%s) reports no importable compressed layout: "
                    "game swapchains stay linear", vkp_gpu_name());
     if (g_dmabuf_nfmt > DMABUF_NFMT_SDR) {
         uint64_t got[DMABUF_NMOD];
-        int n = vkp_dmabuf_modifiers(DRM_XBGR2101010, got, DMABUF_NMOD), ubwc10 = 0;
-        for (int i = 0; i < n; i++) if (got[i] == VKP_MOD_QCOM_COMPRESSED) ubwc10 = 1;
+        int n = vkp_dmabuf_modifiers(DRM_XBGR2101010, got, DMABUF_NMOD), ubwc10 = 0, afbc10 = 0;
+        for (int i = 0; i < n; i++) {
+            if (got[i] == VKP_MOD_QCOM_COMPRESSED) ubwc10 = 1;
+            if (DRM_FORMAT_MOD_ARM_IS_AFBC(got[i])) afbc10 = 1;
+        }
         droiddeck_log("color", "10-bit dma-buf formats AB30/XB30 advertised for HDR10; the compositor's driver (%s) "
                    "imports XB30 %s", vkp_gpu_name(),
                    n == 0 ? "with no layout it reports (copy path unlikely; display layer only)"
-                          : ubwc10 ? "linear and UBWC" : "linear only (UBWC 10-bit frames: display layer only)");
+                          : ubwc10 ? "linear and UBWC" : afbc10 ? "linear and AFBC" : "linear only (compressed 10-bit frames: display layer only)");
     }
     dmabuf_build_feedback();
 }

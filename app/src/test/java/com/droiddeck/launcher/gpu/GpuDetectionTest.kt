@@ -72,6 +72,8 @@ class GpuDetectionTest {
         assertEquals("Not supported: DroidDeck needs an Adreno (Snapdragon) GPU", info(false, 0).supportText)
         assertEquals("Not an Adreno GPU", Family.NOT_ADRENO.label)
         assertEquals("Adreno 8xx", Family.A8XX.label)
+        assertEquals("Mali 5th Gen (CSF)", Family.MALI_5TH_GEN.label)
+        assertEquals("Mali", Family.MALI.label)
     }
 
     @Test fun platformCodeNamesIncludingCaseAndUnknowns() {
@@ -84,5 +86,44 @@ class GpuDetectionTest {
         assertEquals(0, GpuInfo.platformModel(""))
         assertEquals(0, GpuInfo.platformModel("exynos2400"))
         assertEquals(0, GpuInfo.platformModel(" kona "))
+    }
+
+    @Test fun maliModelIsParsedFromMaliRenderer() {
+        assertEquals(615, GpuInfo.maliDigits("Mali-G615"))
+        assertEquals(615, GpuInfo.maliDigits("Mali-G615 MC2"))
+        assertEquals(720, GpuInfo.maliDigits("Mali-G720-Immortalis MC12"))
+        assertEquals(715, GpuInfo.maliDigits("Mali-G715"))
+        assertEquals(925, GpuInfo.maliDigits("Mali-G925 Immortalis"))
+        assertEquals(0, GpuInfo.maliDigits("Adreno 740"))
+        assertEquals(0, GpuInfo.maliDigits("Samsung Xclipse 920"))
+    }
+
+    @Test fun maliFamilyClassification() {
+        assertEquals(Family.MALI_5TH_GEN, GpuInfo.familyOf(adreno = false, model = 615, mali = true))
+        assertEquals(Family.MALI_5TH_GEN, GpuInfo.familyOf(adreno = false, model = 720, mali = true))
+        assertEquals(Family.MALI_5TH_GEN, GpuInfo.familyOf(adreno = false, model = 715, mali = true))
+        assertEquals(Family.MALI, GpuInfo.familyOf(adreno = false, model = 78, mali = true))
+        assertEquals(Family.MALI, GpuInfo.familyOf(adreno = false, model = 0, mali = true))
+    }
+
+    @Test fun maliSupportTiers() {
+        val g615 = GpuInfo("Mali-G615", 615, Family.MALI_5TH_GEN, "MediaTek Dimensity 7400 Ultra", false)
+        assertEquals(Support.TESTED, g615.support)
+        assertEquals("Supported", g615.supportText)
+
+        val g720 = GpuInfo("Mali-G720", 720, Family.MALI_5TH_GEN, "", false)
+        assertEquals(Support.UNTESTED, g720.support)
+        assertEquals("Experimental: Mali PanVK driver support", g720.supportText)
+
+        val genericMali = GpuInfo("Mali", 0, Family.MALI, "", false)
+        assertEquals(Support.UNTESTED, genericMali.support)
+        assertEquals("Experimental: Mali PanVK driver support", genericMali.supportText)
+    }
+
+    @Test fun mediatekPlatformMapping() {
+        assertEquals(615, GpuInfo.platformModel("mt6878"))
+        assertEquals(615, GpuInfo.platformModel("MT6878"))
+        assertEquals(615, GpuInfo.platformModel("unknown", "", "MT6878"))
+        assertEquals(615, GpuInfo.platformModel("unknown", "", "MT6878V/TZA"))
     }
 }

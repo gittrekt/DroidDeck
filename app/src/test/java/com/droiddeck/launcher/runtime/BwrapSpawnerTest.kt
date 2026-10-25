@@ -10,6 +10,7 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -144,5 +145,79 @@ class BwrapSpawnerPlanTest {
 
         assertFalse(plan.binds.any { it.guest.startsWith("/app/bin/") })
         assertFalse(File(dir, "zypak-wrapper").exists())
+    }
+
+    @Test fun gpuBindsPanfrostOnMali() {
+        val context = RuntimeEnvironment.getApplication()
+        val prevMali = BwrapSpawner.maliDevice
+        val prevKgsl = BwrapSpawner.kgslDevice
+        val fakeMali = File(dir, "fake-mali0").apply { createNewFile() }
+        val lib = File(LinuxRuntime.rootDir(context), "usr/lib").apply { mkdirs() }
+        listOf("libvulkan_panfrost.so", "libdisplay-info.so.3", "libSPIRV-Tools.so", "libSPIRV-Tools-opt.so").forEach {
+            File(lib, it).createNewFile()
+        }
+        try {
+            BwrapSpawner.maliDevice = fakeMali.path
+            BwrapSpawner.kgslDevice = File(dir, "nonexistent-kgsl").path
+
+            val plan = BwrapSpawner.plan(context, request(
+                op("t" to "dev", "dest" to "/dev")
+            ), dir)
+
+            assertTrue(plan.binds.any { it.guest == "/run/droiddeck-gpu/libvulkan_panfrost.so" })
+            assertTrue(plan.binds.any { it.guest == "/run/droiddeck-gpu/panfrost_icd.json" })
+            assertEquals("/run/droiddeck-gpu/panfrost_icd.json", plan.env["VK_DRIVER_FILES"])
+            assertEquals("/run/droiddeck-gpu/panfrost_icd.json", plan.env["VK_ICD_FILENAMES"])
+            assertEquals("zink", plan.env["MESA_LOADER_DRIVER_OVERRIDE"])
+            assertEquals("zink", plan.env["GALLIUM_DRIVER"])
+            val icdContent = File(plan.root.parentFile, "panfrost_icd.json").readText()
+            assertTrue(icdContent.contains("/run/droiddeck-gpu/libvulkan_panfrost.so"))
+        } finally {
+            BwrapSpawner.maliDevice = prevMali
+            BwrapSpawner.kgslDevice = prevKgsl
+        }
+    }
+
+    @Test fun gpuReturnsNullWhenNoGpuNode() {
+        val context = RuntimeEnvironment.getApplication()
+        val prevMali = BwrapSpawner.maliDevice
+        val prevKgsl = BwrapSpawner.kgslDevice
+        try {
+            BwrapSpawner.maliDevice = File(dir, "nonexistent-mali").path
+            BwrapSpawner.kgslDevice = File(dir, "nonexistent-kgsl").path
+            val env = mutableMapOf<String, String>()
+            val binds = BwrapSpawner.gpu(LinuxRuntime.rootDir(context).path, File(dir, "root"), env)
+            assertNull(binds)
+        } finally {
+            BwrapSpawner.maliDevice = prevMali
+            BwrapSpawner.kgslDevice = prevKgsl
+        }
+    }
+
+    @Test fun gpuBindsFreedrenoOnAdreno() {
+        val context = RuntimeEnvironment.getApplication()
+        val prevMali = BwrapSpawner.maliDevice
+        val prevKgsl = BwrapSpawner.kgslDevice
+        val fakeKgsl = File(dir, "fake-kgsl").apply { createNewFile() }
+        val lib = File(LinuxRuntime.rootDir(context), "usr/lib").apply { mkdirs() }
+        listOf("libvulkan_freedreno.so", "libdisplay-info.so.3", "libSPIRV-Tools.so", "libSPIRV-Tools-opt.so").forEach {
+            File(lib, it).createNewFile()
+        }
+        try {
+            BwrapSpawner.kgslDevice = fakeKgsl.path
+            BwrapSpawner.maliDevice = File(dir, "nonexistent-mali").path
+
+            val plan = BwrapSpawner.plan(context, request(
+                op("t" to "dev", "dest" to "/dev")
+            ), dir)
+
+            assertTrue(plan.binds.any { it.guest == "/run/droiddeck-gpu/libvulkan_freedreno.so" })
+            assertTrue(plan.binds.any { it.guest == "/run/droiddeck-gpu/freedreno_icd.json" })
+            assertEquals("/run/droiddeck-gpu/freedreno_icd.json", plan.env["VK_DRIVER_FILES"])
+            assertEquals("/run/droiddeck-gpu/freedreno_icd.json", plan.env["VK_ICD_FILENAMES"])
+        } finally {
+            BwrapSpawner.maliDevice = prevMali
+            BwrapSpawner.kgslDevice = prevKgsl
+        }
     }
 }

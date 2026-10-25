@@ -10,6 +10,7 @@ object DriverPairs {
     const val WN_BALANCED = "wn-b"
     const val WN_PERFORMANCE = "wn-p"
     const val DD_TURNIP = "dd-turnip"
+    const val PANVK_G615 = "panvk-g615"
     fun ddTurnip(tag: String) = "$DD_TURNIP:$tag"
 
     class DriverPair(
@@ -42,12 +43,13 @@ object DriverPairs {
         BANNER_ONEUI -> "Banners-Turnip · 8 Gen 2 on One UI" to setOf(Family.A7XX)
         WN_BALANCED -> "WinNative · Balanced" to ALL_ADRENO
         WN_PERFORMANCE -> "WinNative · Performance" to ALL_ADRENO
+        PANVK_G615 -> "Mesa PanVK · Mali-G615 (CSF)" to setOf(Family.MALI_5TH_GEN, Family.MALI)
         else -> key to ALL_ADRENO
     }
 
     fun from(check: TurnipReleases.Check?): List<DriverPair> {
         val assets = check?.assets.orEmpty().filter { it.pair.isNotEmpty() }
-        val order = listOf(DD_TURNIP, BANNER, BANNER_A8XX, BANNER_ONEUI, BANNER_710, WN_BALANCED, WN_PERFORMANCE)
+        val order = listOf(DD_TURNIP, BANNER, BANNER_A8XX, BANNER_ONEUI, BANNER_710, WN_BALANCED, WN_PERFORMANCE, PANVK_G615)
         return assets.map { it.pair }.distinct()
             .sortedBy { key -> order.indexOf(key.substringBefore(':')).let { i -> if (i < 0) order.size else i } }
             .map { key ->
@@ -66,7 +68,7 @@ object DriverPairs {
         rules: List<AutoPicks.Rule> = AutoPicks.BUILT_IN, bad: Set<String> = emptySet(),
         sdk: Int = android.os.Build.VERSION.SDK_INT, blob: Int? = null,
     ): String? {
-        if (gpu.family == Family.NOT_ADRENO) return null
+        if (gpu.support == GpuInfo.Support.UNSUPPORTED || gpu.family == Family.NOT_ADRENO) return null
         val keys = AutoPicks.preferences(gpu, rules, sdk, blob)
             .ifEmpty { AutoPicks.preferences(gpu, AutoPicks.BUILT_IN, sdk, blob) }
             .mapNotNull { if (it == AutoPicks.NEWEST_DD_TURNIP) newestDdTurnip(pairs) else it }

@@ -32,6 +32,7 @@ object AutoPicks {
         Rule(setOf(Family.A7XX_LOW), prefer = listOf(DriverPairs.BANNER_710)),
         Rule(setOf(Family.A7XX), oneUi8Gen2 = true, prefer = listOf(DriverPairs.BANNER_ONEUI)),
         Rule(setOf(Family.A7XX, Family.A6XX), prefer = listOf(DriverPairs.BANNER)),
+        Rule(setOf(Family.MALI_5TH_GEN, Family.MALI), prefer = listOf(DriverPairs.PANVK_G615)),
         Rule(setOf(Family.ADRENO_UNKNOWN), minSdk = 36, prefer = listOf(DriverPairs.WN_BALANCED)),
         Rule(setOf(Family.ADRENO_UNKNOWN), prefer = listOf(DriverPairs.BANNER)),
     )

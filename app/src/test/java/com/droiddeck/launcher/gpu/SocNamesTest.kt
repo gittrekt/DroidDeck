@@ -30,4 +30,22 @@ class SocNamesTest {
         assertNull(SocNames.name("SM8975-PRO", ""))
         assertNull(SocNames.name("Qualcomm SM8975", ""))
     }
+
+    @Test fun dimensity7400UltraIsIdentified() {
+        assertEquals("MediaTek Dimensity 7400 Ultra", SocNames.name("MT6878", ""))
+        assertEquals("MediaTek Dimensity 7400 Ultra", SocNames.name("MT6878V/TZA", ""))
+        assertEquals("MediaTek Dimensity 7400 Ultra (MT6878)", SocNames.label("MT6878", ""))
+        assertEquals("MediaTek Dimensity 7400 Ultra (MT6878V/TZA)", SocNames.label("MT6878V/TZA", ""))
+        assertEquals("Dimensity 7400 family", SocNames.name("", "mt6878"))
+        assertEquals("Dimensity 7400 family", SocNames.label("", "mt6878"))
+        assertEquals("Dimensity 7400 family (MT6878_EXP)", SocNames.label("MT6878_EXP", "mt6878"))
+        assertEquals("MediaTek Dimensity 7400 Ultra (MT6878)", SocNames.label("MT6878", "mt6878"))
+    }
+
+    @Test fun mediatekPropertyResolution() {
+        val mtkProp = { key: String -> if (key == "ro.mediatek.platform") "MT6878" else "" }
+        assertEquals("MT6878", SocNames.model(mtkProp))
+        val mtkVendorProp = { key: String -> if (key == "ro.vendor.mediatek.platform") "MT6878V/TZA" else "" }
+        assertEquals("MT6878V/TZA", SocNames.model(mtkVendorProp))
+    }
 }

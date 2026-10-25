@@ -129,4 +129,26 @@ class DriverBundleTest {
         assertEquals(2, DriverBundle.all(context).size)
         assertFalse(first.androidId == second.androidId)
     }
+
+    @Test fun installsPanfrostBundleForMali() {
+        val panfrostManifest = JSONObject()
+            .put("package", "PanVK-Mali").put("version", "24.3.0").put("tag", "panvk-g615-v24.3.0")
+            .put("drivers", JSONObject()
+                .put("android", JSONObject().put("path", "android"))
+                .put("linux", JSONObject().put("path", "linux")))
+        val panfrostZip = zip(mapOf(
+            "android/meta.json" to JSONObject().put("name", "PanVK Android").put("libraryName", "vulkan.panfrost.so").toString().toByteArray(),
+            "android/vulkan.panfrost.so" to library("libc.so"),
+            "linux/meta.json" to JSONObject().put("name", "Mesa PanVK").put("driverVersion", "24.3.0").put("libraryName", "libvulkan_panfrost.so").toString().toByteArray(),
+            "linux/libvulkan_panfrost.so" to library("libc.so.6"),
+            "manifest.json" to panfrostManifest.toString().toByteArray(),
+        ))
+        val b = DriverBundle.install(context, panfrostZip)
+        assertEquals("panvk-g615-v24.3.0", b.id)
+        assertEquals("PanVK-Mali 24.3.0", b.label)
+        assertTrue(TurnipDriver(context).isInstalled(b.androidId))
+        assertTrue(LinuxVulkanDriverManager(context).isInstalled(b.linuxId))
+        assertEquals(b.id, DriverBundle.containing(context, b.linuxId, linux = true)?.id)
+        assertEquals(b.id, DriverBundle.containing(context, b.androidId, linux = false)?.id)
+    }
 }

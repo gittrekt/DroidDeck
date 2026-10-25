@@ -64,4 +64,10 @@ class AutoPicksTest {
         assertNull(AutoPicks.parse("""{"schemaVersion": 1, "rules": [{"families": ["A9XX"], "prefer": ["banner"]}]}"""))
         assertNull(AutoPicks.parse("not json"))
     }
+
+    @Test fun maliG615PicksPanvk() {
+        val maliGpu = GpuInfo("Mali-G615", 615, GpuInfo.Family.MALI_5TH_GEN, "MediaTek Dimensity 7400 Ultra", false)
+        val prefs = AutoPicks.preferences(maliGpu, AutoPicks.BUILT_IN, 34, null)
+        assertEquals(listOf(DriverPairs.PANVK_G615), prefs)
+    }
 }

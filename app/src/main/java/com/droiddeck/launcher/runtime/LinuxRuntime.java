@@ -25,6 +25,9 @@ public final class LinuxRuntime {
     public static final String MODE_RUN = "run";
     public static final String EXTRA_LINUX_MODE = "linux_mode";
     private static final String KGSL_DEVICE = "/dev/kgsl-3d0";
+    public static final String MALI_DEVICE = "/dev/mali0";
+    static String kgslDevice = KGSL_DEVICE;
+    static String maliDevice = MALI_DEVICE;
     public static final String GUEST_RUNTIME_DIR = "/run/droiddeck";
     private static final String SYSTEM_FONTS = "/system/fonts";
     private static final String GUEST_SYSTEM_FONTS = "/usr/local/share/fonts/android";
@@ -93,8 +96,14 @@ public final class LinuxRuntime {
         File icdDir = new File(rootDir(context), "usr/share/vulkan/icd.d");
         File[] manifests = icdDir.listFiles((dir, name) -> name.endsWith(".json"));
         if (manifests == null) return null;
+        boolean isMali = new File(maliDevice).exists();
         for (File manifest : manifests) {
-            if (manifest.getName().contains("freedreno")) return manifest;
+            String name = manifest.getName();
+            if (isMali) {
+                if (name.contains("panfrost") || name.contains("panvk")) return manifest;
+            } else {
+                if (name.contains("freedreno")) return manifest;
+            }
         }
         return manifests.length > 0 ? manifests[0] : null;
     }
@@ -248,17 +257,47 @@ public final class LinuxRuntime {
     }
 
     private static void bindGpuNode(Context context, List<String> cmd) {
-        StructStat st;
+        StructStat st = null;
+        boolean isMali = false;
         try {
-            st = Os.stat(KGSL_DEVICE);
-        } catch (ErrnoException e) {
+            st = Os.stat(kgslDevice);
+            if (st != null && st.st_mode == 0) st = null;
+        } catch (ErrnoException ignored) {
+        }
+        if (st == null) {
+            try {
+                st = Os.stat(maliDevice);
+                if (st != null && st.st_mode == 0) st = null;
+                isMali = true;
+            } catch (ErrnoException ignored) {
+            }
+        }
+        if (st == null) {
             return;
         }
         long dev = st.st_rdev;
         long major = ((dev >> 8) & 0xfff) | ((dev >> 32) & ~0xfffL);
         long minor = (dev & 0xff) | ((dev >> 12) & ~0xffL);
-        String node = "renderD" + minor;
         File base = new File(liveDir(context), "drm");
+        if (isMali) {
+            File charDev = new File(base, "sys/" + major + ":" + minor);
+            File device = new File(charDev, "device");
+            try {
+                if (!device.isDirectory() && !device.mkdirs()) {
+                    return;
+                }
+                Files.write(new File(device, "uevent").toPath(),
+                        "DRIVER=mali\nMODALIAS=platform:mali\n".getBytes(StandardCharsets.UTF_8));
+                Files.write(new File(charDev, "uevent").toPath(),
+                        ("MAJOR=" + major + "\nMINOR=" + minor + "\nDEVNAME=mali0\n").getBytes(StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                return;
+            }
+            bind(cmd, new File(base, "sys").getPath() + ":/sys/dev/char");
+            bind(cmd, MALI_DEVICE + ":" + MALI_DEVICE);
+            return;
+        }
+        String node = "renderD" + minor;
         File dri = new File(base, "dri");
         File device = new File(base, "sys/" + major + ":" + minor + "/device");
         File drm = new File(device, "drm/" + node);
@@ -284,7 +323,7 @@ public final class LinuxRuntime {
         }
         bind(cmd, new File(base, "sys").getPath() + ":/sys/dev/char");
         bind(cmd, dri.getPath() + ":/dev/dri");
-        bind(cmd, KGSL_DEVICE + ":/dev/dri/" + node);
+        bind(cmd, kgslDevice + ":/dev/dri/" + node);
         bindDrmClass(base, cmd, node, major + ":" + minor);
     }
 

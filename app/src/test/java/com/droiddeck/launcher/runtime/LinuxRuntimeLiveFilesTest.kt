@@ -118,6 +118,62 @@ class LinuxRuntimeLiveFilesTest {
         assertEquals("active", scratch.readText())
     }
 
+    @Test fun bindsGpuNodeIncludesMaliWhenPresent() {
+        val prevMali = LinuxRuntime.maliDevice
+        val prevKgsl = LinuxRuntime.kgslDevice
+        val fakeMali = File(root, "fake-mali0").apply { createNewFile() }
+        try {
+            LinuxRuntime.maliDevice = fakeMali.path
+            LinuxRuntime.kgslDevice = File(root, "nonexistent-kgsl").path
+
+            val binds = LinuxRuntime.binds(context, null, null, null, null)
+
+            assertTrue("/dev/mali0:/dev/mali0" in binds)
+            assertTrue(binds.any { it.endsWith(":/sys/dev/char") })
+            assertFalse(binds.any { it.contains("renderD") })
+
+            val live = LinuxRuntime.liveDir(context)
+            val charBase = File(live, "drm/sys")
+            val charDevs = charBase.listFiles()
+            assertTrue(charDevs != null && charDevs.isNotEmpty())
+            val charDev = charDevs!!.first()
+            val uevent = File(charDev, "uevent")
+            assertTrue(uevent.isFile)
+            val ueventText = uevent.readText()
+            assertTrue(ueventText.contains("DEVNAME=mali0"))
+            assertTrue(ueventText.contains("MAJOR="))
+            assertTrue(ueventText.contains("MINOR="))
+
+            val devUevent = File(charDev, "device/uevent")
+            assertTrue(devUevent.isFile)
+            val devUeventText = devUevent.readText()
+            assertTrue(devUeventText.contains("DRIVER=mali"))
+            assertTrue(devUeventText.contains("MODALIAS=platform:mali"))
+        } finally {
+            LinuxRuntime.maliDevice = prevMali
+            LinuxRuntime.kgslDevice = prevKgsl
+        }
+    }
+
+    @Test fun vulkanIcdPrioritizesPanfrostOnMali() {
+        val prevMali = LinuxRuntime.maliDevice
+        val fakeMali = File(root, "fake-mali0").apply { createNewFile() }
+        val icdDir = File(LinuxRuntime.rootDir(context), "usr/share/vulkan/icd.d").apply { mkdirs() }
+        val freedreno = File(icdDir, "freedreno_icd.json").apply { writeText("{}") }
+        val panfrost = File(icdDir, "panfrost_icd.json").apply { writeText("{}") }
+        try {
+            LinuxRuntime.maliDevice = fakeMali.path
+            assertEquals(panfrost, LinuxRuntime.vulkanIcd(context))
+
+            LinuxRuntime.maliDevice = File(root, "nonexistent-mali").path
+            assertEquals(freedreno, LinuxRuntime.vulkanIcd(context))
+        } finally {
+            LinuxRuntime.maliDevice = prevMali
+            freedreno.delete()
+            panfrost.delete()
+        }
+    }
+
     private fun runtime() = LinuxRuntime.rootDir(context).apply {
         mkdirs()
         File(this, "runtime-file").writeText("installed")

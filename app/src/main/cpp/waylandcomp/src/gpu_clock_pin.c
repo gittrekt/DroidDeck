@@ -66,7 +66,13 @@ static bool submit_pin(void) {
 
 static bool prepare_pin(void) {
     pin.fd = open("/dev/kgsl-3d0", O_RDWR | O_CLOEXEC);
-    if (pin.fd < 0) return false;
+    if (pin.fd < 0) {
+        if (errno == ENOENT) {
+            pin.fd = -1;
+            return true;
+        }
+        return false;
+    }
     struct kgsl_devinfo info = {0};
     struct kgsl_device_getproperty device_info = {
         .type = KGSL_PROP_DEVICE_INFO, .value = &info, .sizebytes = sizeof(info),
@@ -149,6 +155,10 @@ bool gpu_clock_pin_set(bool on) {
     if (on) {
         ok = prepare_pin();
         if (ok) {
+            if (pin.fd < 0) {
+                pthread_mutex_unlock(&lock);
+                return true;
+            }
             atomic_store(&running, true);
             int error = pthread_create(&worker, NULL, hold_pin, NULL);
             if (error) {

@@ -8,17 +8,23 @@ import java.io.File
 object GpuClockPin {
     private const val TAG = "GpuClockPin"
     private const val KGSL_NODE = "/dev/kgsl-3d0"
+    private const val MALI_NODE = "/dev/mali0"
 
     private const val MARKER = "gpu-clock-pinned"
 
     @Volatile
     private var pinned = false
 
-    private val supported: Boolean by lazy { File(KGSL_NODE).exists() }
+    internal var kgslNodeExists: () -> Boolean = { File(KGSL_NODE).exists() }
+    internal var maliNodeExists: () -> Boolean = { File(MALI_NODE).exists() }
+
+    private val supported: Boolean get() = kgslNodeExists()
+    private val isMali: Boolean get() = maliNodeExists()
 
     @Synchronized
     fun start(context: Context): String {
         if (!SessionPrefs.gpuClockPin(context)) return "gpu clock: governed"
+        if (isMali) return "gpu clock: governed (Mali devfreq)"
         if (!supported) return "gpu clock: no $KGSL_NODE, left governed"
         return try {
             File(context.filesDir, MARKER).createNewFile()

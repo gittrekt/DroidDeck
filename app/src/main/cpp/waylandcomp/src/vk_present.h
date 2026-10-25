@@ -22,7 +22,16 @@ struct vkp_image;
 
 #define VKP_MOD_LINEAR          0x0000000000000000ULL
 #define VKP_MOD_QCOM_COMPRESSED 0x0500000000000001ULL
+#define VKP_MOD_ARM_AFBC_16x16  0x0800000000000001ULL
+#define VKP_MOD_ARM_AFBC_32x8   0x0800000000000002ULL
 #define VKP_MOD_INVALID         0x00ffffffffffffffULL
+
+#define DRM_FORMAT_MOD_VENDOR_ARM 0x08ULL
+#define DRM_FORMAT_MOD_ARM_TYPE_AFBC 0x00ULL
+#define DRM_FORMAT_MOD_ARM_IS_AFBC(m) \
+    ((((uint64_t)(m) >> 56) == DRM_FORMAT_MOD_VENDOR_ARM) && \
+     ((((uint64_t)(m) >> 52) & 0x0fULL) == DRM_FORMAT_MOD_ARM_TYPE_AFBC))
+
 const char *vkp_modifier_name(uint64_t modifier);
 int vkp_dmabuf_modifiers(uint32_t drm_format, uint64_t *out, int max);
 

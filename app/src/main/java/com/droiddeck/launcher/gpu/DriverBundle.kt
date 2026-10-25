@@ -75,10 +75,16 @@ object DriverBundle {
 
             val linuxStage = lm.newStagingDir()
             val linuxId = try {
-                val library = linuxDir.listFiles()?.firstOrNull { it.isFile && it.name.startsWith("libvulkan_freedreno") && it.name.endsWith(".so") }
-                library?.copyTo(File(linuxStage, LinuxVulkanDriverManager.LIB_NAME))
+                val library = linuxDir.listFiles()?.firstOrNull {
+                    it.isFile && (it.name.startsWith("libvulkan_freedreno") || it.name.startsWith("libvulkan_panfrost")) && it.name.endsWith(".so")
+                }
+                val isPanfrost = library?.name?.contains("panfrost") == true
+                val targetName = if (isPanfrost) LinuxVulkanDriverManager.PANFROST_LIB_NAME else LinuxVulkanDriverManager.LIB_NAME
+                library?.copyTo(File(linuxStage, targetName))
                 val meta = File(linuxDir, LinuxVulkanDriverManager.META_NAME).takeIf { it.isFile }
                     ?.let { runCatching { JSONObject(FileUtils.readString(it)) }.getOrNull() }
+                File(linuxDir, LinuxVulkanDriverManager.ICD_NAME).takeIf { it.isFile }
+                    ?.copyTo(File(linuxStage, LinuxVulkanDriverManager.ICD_NAME))
                 lm.adopt(linuxStage, library?.name, meta, manifest.name)
             } catch (e: Exception) {
                 FileUtils.delete(linuxStage)

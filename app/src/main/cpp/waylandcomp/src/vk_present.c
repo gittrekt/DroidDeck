@@ -18,6 +18,7 @@
 #include <poll.h>
 #include <time.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <android/log.h>
 
 #define TAG "DroidDeckWayland"
@@ -41,6 +42,7 @@ struct vkp_image {
 static ANativeWindow *g_window;
 static char *g_driver_path, *g_library_name, *g_native_lib_dir;
 static int g_dev_state;
+static bool g_has_drm_mod_ext;
 static VkInstance g_inst;
 static VkPhysicalDevice g_pd;
 static VkDevice g_dev;
@@ -459,17 +461,31 @@ static int dev_init(void) {
     }
     g_vk.GetPhysicalDeviceMemoryProperties(g_pd, &g_memprops);
 
-    const char *dev_exts[7] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_external_memory_fd",
-                               "VK_EXT_external_memory_dma_buf", "VK_EXT_image_drm_format_modifier",
-                               "VK_KHR_image_format_list", NULL, NULL};
-    uint32_t n_dev_exts = 5;
+    const char *candidate_exts[] = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        "VK_KHR_external_memory_fd",
+        "VK_EXT_external_memory_dma_buf",
+        "VK_EXT_image_drm_format_modifier",
+        "VK_KHR_image_format_list"
+    };
+    const char *dev_exts[16];
+    uint32_t n_dev_exts = 0;
     uint32_t ne = 0;
     g_vk.EnumerateDeviceExtensionProperties(g_pd, NULL, &ne, NULL);
     VkExtensionProperties *exts = calloc(ne ? ne : 1, sizeof(*exts));
     g_vk.EnumerateDeviceExtensionProperties(g_pd, NULL, &ne, exts);
-    for (unsigned i = 0; i < 5; i++)
-        if (!has_ext(exts, ne, dev_exts[i]))
-            LOGE("present: driver MISSING %s (dmabuf import will fail)", dev_exts[i]);
+    for (unsigned i = 0; i < sizeof(candidate_exts) / sizeof(candidate_exts[0]); i++) {
+        if (has_ext(exts, ne, candidate_exts[i])) {
+            dev_exts[n_dev_exts++] = candidate_exts[i];
+        } else {
+            if (!strcmp(candidate_exts[i], "VK_EXT_image_drm_format_modifier")) {
+                LOGI("present: driver lacks %s; falling back to linear tiling when possible", candidate_exts[i]);
+            } else {
+                LOGE("present: driver MISSING %s (dmabuf import will fail)", candidate_exts[i]);
+            }
+        }
+    }
+    g_has_drm_mod_ext = has_ext(exts, ne, "VK_EXT_image_drm_format_modifier");
     int want_hdr_md = 0;
     if (droiddeck_color_requested()) {
         want_hdr_md = has_ext(exts, ne, VK_EXT_HDR_METADATA_EXTENSION_NAME);
@@ -841,10 +857,16 @@ static int record_bars_clear(VkCommandBuffer cmd, VkImage img, const VkImageBlit
 }
 
 const char *vkp_modifier_name(uint64_t modifier) {
-    static char other[40];
+    static char other[64];
     if (modifier == VKP_MOD_LINEAR) return "linear";
     if (modifier == VKP_MOD_QCOM_COMPRESSED) return "qcom_compressed";
     if (modifier == VKP_MOD_INVALID) return "implicit";
+    if (modifier == VKP_MOD_ARM_AFBC_16x16) return "arm_afbc_16x16";
+    if (modifier == VKP_MOD_ARM_AFBC_32x8) return "arm_afbc_32x8";
+    if (DRM_FORMAT_MOD_ARM_IS_AFBC(modifier)) {
+        snprintf(other, sizeof(other), "arm_afbc_%llx", (unsigned long long)(modifier & 0x000fffffffffffffULL));
+        return other;
+    }
     snprintf(other, sizeof(other), "modifier %#llx", (unsigned long long)modifier);
     return other;
 }
@@ -885,7 +907,7 @@ int vkp_dmabuf_modifiers(uint32_t drm_format, uint64_t *out, int max) {
     for (uint32_t i = 0; i < list.drmFormatModifierCount; i++) {
         uint64_t m = props[i].drmFormatModifier;
         const char *why = NULL;
-        if (m != VKP_MOD_LINEAR && m != VKP_MOD_QCOM_COMPRESSED) why = "unknown layout";
+        if (m != VKP_MOD_LINEAR && m != VKP_MOD_QCOM_COMPRESSED && !DRM_FORMAT_MOD_ARM_IS_AFBC(m)) why = "unknown layout";
         else if (props[i].drmFormatModifierPlaneCount != 1) why = "not single-plane";
         else if (!(props[i].drmFormatModifierTilingFeatures & VK_FORMAT_FEATURE_BLIT_SRC_BIT)) why = "no blit source";
         else if (!modifier_importable(fmt, m, VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) why = "not importable as a dma-buf";
@@ -926,13 +948,15 @@ struct vkp_image *vkp_image_import_dmabuf(int fd, uint32_t drm_format, uint64_t 
         .sType = VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT,
         .drmFormatModifier = modifier, .drmFormatModifierPlaneCount = 1, .pPlaneLayouts = &plane};
     VkExternalMemoryImageCreateInfo extImg = {
-        .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO, .pNext = &modInfo,
+        .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO,
+        .pNext = (!g_has_drm_mod_ext && modifier == VKP_MOD_LINEAR) ? NULL : &modInfo,
         .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT};
     VkImageCreateInfo ici = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO, .pNext = &extImg,
         .imageType = VK_IMAGE_TYPE_2D, .format = img->fmt, .extent = {w, h, 1},
         .mipLevels = 1, .arrayLayers = 1, .samples = VK_SAMPLE_COUNT_1_BIT,
-        .tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
+        .tiling = (!g_has_drm_mod_ext && modifier == VKP_MOD_LINEAR)
+                  ? VK_IMAGE_TILING_LINEAR : VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT,
         .usage = as_blit_dst ? VK_IMAGE_USAGE_TRANSFER_DST_BIT
                  : img->sampled ? sampled_usage : VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         .sharingMode = VK_SHARING_MODE_EXCLUSIVE, .initialLayout = VK_IMAGE_LAYOUT_UNDEFINED};
@@ -941,7 +965,9 @@ struct vkp_image *vkp_image_import_dmabuf(int fd, uint32_t drm_format, uint64_t 
         LOGE("%s: vkCreateImage(%s, %dx%d, pitch %u, offset %u) -> %s%s", as_blit_dst ? "layer" : "dmabuf",
              vkp_modifier_name(modifier), w, h, stride, offset, vk_result_name(cr),
              (!as_blit_dst && modifier == VKP_MOD_QCOM_COMPRESSED)
-                 ? ": the game's UBWC layout was refused; DROIDDECK_WAYLAND_UBWC=0 forces linear buffers" : "");
+                 ? ": the game's UBWC layout was refused; DROIDDECK_WAYLAND_UBWC=0 forces linear buffers"
+                 : (!as_blit_dst && DRM_FORMAT_MOD_ARM_IS_AFBC(modifier))
+                     ? ": the game's ARM AFBC layout was refused; DROIDDECK_WAYLAND_AFBC=0 forces linear buffers" : "");
         free(img); return NULL;
     }
 

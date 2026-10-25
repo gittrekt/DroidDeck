@@ -68,4 +68,9 @@ class GpuModelFallbackTest {
             platformGpuModel = 850)
         assertEquals(GpuInfo.Support.UNSUPPORTED, otherGpu.support)
     }
+
+    @Test fun maliModelResolvedFromVulkanOrPlatform() {
+        assertEquals(615 to "vulkan", GpuInfo.modelFromNames(null, { "Mali-G615 MC2" }, { 0 }))
+        assertEquals(615 to "platform", GpuInfo.modelFromNames(null, { null }, { GpuInfo.platformModel("mt6878") }))
+    }
 }

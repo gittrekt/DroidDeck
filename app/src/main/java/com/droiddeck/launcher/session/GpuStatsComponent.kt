@@ -24,15 +24,21 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     }
 
     fun prepare(): Boolean {
-        if (!File(KGSL).exists()) return false
-        val unreadable = MANGOHUD_FILES.any { File(KGSL, it).let { f -> f.exists() && !f.canRead() } }
-        if (!unreadable && !File(GPUBUSY).canRead()) return false
+        val hasKgsl = kgslDir.exists()
+        val hasMaliDevfreq = devfreqDir.list()?.any { it.contains("mali") } ?: false
+        if (!hasKgsl && !hasMaliDevfreq) return false
+        if (hasKgsl) {
+            val unreadable = MANGOHUD_FILES.any { File(kgslDir, it).let { f -> f.exists() && !f.canRead() } }
+            if (!unreadable && !File(kgslDir, "gpubusy").canRead()) return false
+        }
         return try {
             dir.mkdirs()
             dir.listFiles()?.forEach { java.nio.file.Files.deleteIfExists(it.toPath()) }
             feeds.clear()
-            PASSTHROUGH_FILES.forEach { name ->
-                runCatching { File(dir, name).writeText(File(KGSL, name).readText()) }
+            if (hasKgsl) {
+                PASSTHROUGH_FILES.forEach { name ->
+                    runCatching { File(dir, name).writeText(File(kgslDir, name).readText()) }
+                }
             }
             loadFeed()?.let { load ->
                 feeds.add(load)
@@ -83,7 +89,17 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
 
     private fun loadFeed(): Feed? {
         latchedBusyFeed()?.let { return it }
-        return pick("gpu_busy_percentage", LOAD_SOURCES, "%3d %%\n") { it.coerceIn(0, 100) }
+        val sources = mutableListOf(
+            "${kgslDir.path}/gpu_busy_percentage", "${kgslDir.path}/devfreq/gpu_load",
+            "${kgslDir.path}/gpuload", "$QCOM_GPU/gpu_busy",
+        )
+        devfreqDir.list()?.sorted()?.forEach { node ->
+            if (node.contains("mali") || node.contains("gpu")) {
+                sources.add("${devfreqDir.path}/$node/load")
+                sources.add("${devfreqDir.path}/$node/gpu_load")
+            }
+        }
+        return pick("gpu_busy_percentage", sources, "%3d %%\n") { it.coerceIn(0, 100) }
     }
 
     // kgsl publishes busy/total once per ~1 s of GPU-on time and zeroes it on any read while the GPU is
@@ -91,9 +107,10 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
     private fun latchedBusyFeed(): Feed? {
         var load = 0L
         var windowAt = 0L
+        val gpubusyFile = File(kgslDir, "gpubusy")
         val read = read@{
             val parts = runCatching {
-                File(GPUBUSY).readText().trim().split(Regex("\\s+")).map { it.toLong() }
+                gpubusyFile.readText().trim().split(Regex("\\s+")).map { it.toLong() }
             }.getOrNull()
             if (parts == null || parts.size < 2) return@read null
             val now = SystemClock.elapsedRealtime()
@@ -105,7 +122,7 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
             }
             load
         }
-        return if (read() != null) Feed(File(dir, "gpu_busy_percentage"), GPUBUSY, read, "%3d %%\n") else null
+        return if (read() != null) Feed(File(dir, "gpu_busy_percentage"), gpubusyFile.path, read, "%3d %%\n") else null
     }
 
     private fun pick(name: String, sources: List<String>, format: String, unit: (Long) -> Long?): Feed? {
@@ -135,26 +152,46 @@ class GpuStatsComponent(val dir: File) : SessionPart() {
         private val MANGOHUD_FILES = listOf("gpu_busy_percentage", "clock_mhz", "temp")
         private val PASSTHROUGH_FILES = listOf("gpu_model", "gpu_chipid")
         private const val QCOM_GPU = "/sys/kernel/gpu"
-        private val LOAD_SOURCES = listOf(
-            "$KGSL/gpu_busy_percentage", "$KGSL/devfreq/gpu_load", "$KGSL/gpuload", "$QCOM_GPU/gpu_busy",
-        )
+        internal var kgslDir = File(KGSL)
+        internal var devfreqDir = File("/sys/class/devfreq")
+        internal var thermalDir = File("/sys/class/thermal")
         private val DEVFREQ_NODES = listOf(
             "kgsl-3d0", "3d00000.qcom,kgsl-3d0", "2c00000.qcom,kgsl-3d0", "5000000.qcom,kgsl-3d0", "5900000.qcom,kgsl-3d0",
+            "13000000.mali", "mali0", "mali",
         )
 
         private fun clockSources(): List<String> {
             val sources = mutableListOf(
-                "$KGSL/clock_mhz", "$KGSL/gpu_clock", "$KGSL/gpuclk", "$KGSL/devfreq/cur_freq", "$QCOM_GPU/gpu_clock",
+                "${kgslDir.path}/clock_mhz", "${kgslDir.path}/gpu_clock", "${kgslDir.path}/gpuclk",
+                "${kgslDir.path}/devfreq/cur_freq", "$QCOM_GPU/gpu_clock",
             )
-            DEVFREQ_NODES.forEach { sources.add("/sys/class/devfreq/$it/cur_freq") }
-            File("/sys/class/devfreq").list()?.sorted()?.forEach { node ->
-                if (node.contains("kgsl") || node.contains("gpu")) sources.add("/sys/class/devfreq/$node/cur_freq")
+            DEVFREQ_NODES.forEach { sources.add("${devfreqDir.path}/$it/cur_freq") }
+            devfreqDir.list()?.sorted()?.forEach { node ->
+                if (node.contains("kgsl") || node.contains("gpu") || node.contains("mali")) sources.add("${devfreqDir.path}/$node/cur_freq")
             }
             return sources.distinct()
         }
 
+        private fun thermalZone(sensor: String): String? {
+            thermalDir.listFiles()?.forEach { zone ->
+                val type = runCatching { File(zone, "type").readText().trim() }.getOrNull()
+                if (type != null && type.contains(sensor, ignoreCase = true)) {
+                    val temp = File(zone, "temp")
+                    if (temp.canRead()) return temp.path
+                }
+            }
+            return null
+        }
+
         private fun tempSources(): List<String> =
-            listOfNotNull("$KGSL/temp", "$KGSL/devfreq/temp", "$QCOM_GPU/temp", LinuxRuntime.gpuTempSource()).distinct()
+            listOfNotNull(
+                "${kgslDir.path}/temp",
+                "${kgslDir.path}/devfreq/temp",
+                "$QCOM_GPU/temp",
+                LinuxRuntime.gpuTempSource(),
+                thermalZone("mali"),
+                thermalZone("gpu"),
+            ).distinct()
 
         private fun firstNumber(path: String): Long? =
             runCatching { Regex("-?\\d+").find(File(path).readText())?.value?.toLong() }.getOrNull()

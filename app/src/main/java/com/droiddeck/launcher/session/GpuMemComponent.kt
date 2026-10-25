@@ -34,16 +34,16 @@ class GpuMemComponent(private val file: File, private val root: File) : SessionP
     }
 
     private fun sample(): Long? {
-        readLong("$KGSL_ROOT/page_alloc")?.let { source = "$KGSL_ROOT/page_alloc"; return it }
+        readLong("${kgslRoot.path}/page_alloc")?.let { source = "${kgslRoot.path}/page_alloc"; return it }
         val pids = sessionPids()
         var perProcess = 0L
         var anyProcess = false
         for (pid in pids) {
-            val mapped = readLong("$KGSL_ROOT/proc/$pid/gpumem_mapped") ?: continue
-            perProcess += mapped + (readLong("$KGSL_ROOT/proc/$pid/gpumem_unmapped") ?: 0L)
+            val mapped = readLong("${kgslRoot.path}/proc/$pid/gpumem_mapped") ?: continue
+            perProcess += mapped + (readLong("${kgslRoot.path}/proc/$pid/gpumem_unmapped") ?: 0L)
             anyProcess = true
         }
-        if (anyProcess) { source = "$KGSL_ROOT/proc/<pid>/gpumem_*"; return perProcess }
+        if (anyProcess) { source = "${kgslRoot.path}/proc/<pid>/gpumem_*"; return perProcess }
         var mappedKb = 0L
         var anyMap = false
         for (pid in pids) {
@@ -51,17 +51,17 @@ class GpuMemComponent(private val file: File, private val root: File) : SessionP
             mappedKb += kb
             anyMap = true
         }
-        if (anyMap) { source = "/proc/<pid>/maps (KGSL mappings)"; return mappedKb * 1024 }
+        if (anyMap) { source = "/proc/<pid>/maps (GPU mappings)"; return mappedKb * 1024 }
         return null
     }
 
     private fun sessionPids(): List<String> =
-        File("/proc").list()?.filter { it.isNotEmpty() && it.all(Char::isDigit) }.orEmpty()
+        procDir.list()?.filter { it.isNotEmpty() && it.all(Char::isDigit) }.orEmpty()
 
-    private fun kgslMappedKb(pid: String): Long? = runCatching {
+    internal fun parseMaps(lines: Sequence<String>): Long {
         var bytes = 0L
-        File("/proc/$pid/maps").forEachLine { line ->
-            if (line.endsWith("kgsl-3d0") || line.contains("/dev/dri/renderD")) {
+        for (line in lines) {
+            if (line.endsWith("kgsl-3d0") || line.contains("/dev/mali0") || line.contains("/dev/dri/renderD")) {
                 val dash = line.indexOf('-')
                 val space = line.indexOf(' ')
                 if (dash > 0 && space > dash) {
@@ -69,7 +69,11 @@ class GpuMemComponent(private val file: File, private val root: File) : SessionP
                 }
             }
         }
-        bytes / 1024
+        return bytes / 1024
+    }
+
+    private fun kgslMappedKb(pid: String): Long? = runCatching {
+        parseMaps(File(procDir, "$pid/maps").useLines { it.toList().asSequence() })
     }.getOrNull()
 
     private fun write(bytes: Long) {
@@ -86,6 +90,8 @@ class GpuMemComponent(private val file: File, private val root: File) : SessionP
         private const val TAG = "SessionService"
         private const val KGSL_ROOT = "/sys/class/kgsl/kgsl"
         private const val PERIOD_MS = 5_000L
+        internal var kgslRoot = File(KGSL_ROOT)
+        internal var procDir = File("/proc")
 
         private fun readLong(path: String): Long? =
             runCatching { File(path).readText().trim().toLong() }.getOrNull()

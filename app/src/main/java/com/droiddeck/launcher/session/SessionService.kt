@@ -390,6 +390,9 @@ class SessionService : Service() {
     private fun tuDebugOverride(): String? = File(Environment.getExternalStorageDirectory(), TU_DEBUG_SWITCH)
         .takeIf { it.isFile }?.let { FileUtils.readString(it)?.trim() }?.takeIf { it.isNotEmpty() }
 
+    private fun panDebugOverride(): String? = File(Environment.getExternalStorageDirectory(), PAN_DEBUG_SWITCH)
+        .takeIf { it.isFile }?.let { FileUtils.readString(it)?.trim() }?.takeIf { it.isNotEmpty() }
+
     private fun sysmemDriver(linuxDriverId: String): Boolean {
         if (linuxDriverId.isEmpty()) return false
         val name = LinuxVulkanDriverManager(this).getDriverName(linuxDriverId).lowercase()
@@ -695,9 +698,19 @@ class SessionService : Service() {
         )
         LinuxVulkanDriver.resolveIcdPath(this, linuxDriverId)
             ?.let { guest.add(LinuxVulkanDriver.ENV + "=" + it) }
+        val isTurnip = if (linuxDriverId.isNotEmpty()) {
+            val driverName = LinuxVulkanDriverManager(this).getDriverName(linuxDriverId).lowercase()
+            !driverName.contains("panfrost") && !driverName.contains("panvk")
+        } else {
+            !File(LinuxRuntime.MALI_DEVICE).exists() && !DeviceSupport.mali()
+        }
         val tuOverride = tuDebugOverride()
         val tuDriver = sysmemDriver(linuxDriverId)
-        (tuOverride ?: "sysmem".takeIf { tuDriver || SessionPrefs.tuSysmem(this) })?.let { guest.add("TU_DEBUG=$it") }
+        if (isTurnip) {
+            (tuOverride ?: "sysmem".takeIf { tuDriver || SessionPrefs.tuSysmem(this) })?.let { guest.add("TU_DEBUG=$it") }
+        } else {
+            panDebugOverride()?.let { guest.add("PAN_MESA_DEBUG=$it") }
+        }
         if (SessionPrefs.zinkLazy(this)) {
             guest.add("ZINK_DESCRIPTORS=lazy")
             guest.add("ZINK_DEBUG=compact")
@@ -728,7 +741,7 @@ class SessionService : Service() {
         if (com.droiddeck.launcher.core.ZramSupport.supported()) guest.add("BL_ZRAM=1")
         guest.add("BANNER_AUDIO_DIRECT_DECAY=0")
         val extra = extraEnv() + com.droiddeck.launcher.agent.AgentEnv.beginSession(this)
-        if (extra.none { it.startsWith("TU_DEBUG=") }) guest.add("$GAME_TU_DEBUG=" + (tuOverride ?: if (tuDriver) "sysmem" else ""))
+        if (isTurnip && extra.none { it.startsWith("TU_DEBUG=") }) guest.add("$GAME_TU_DEBUG=" + (tuOverride ?: if (tuDriver) "sysmem" else ""))
         extra.forEach { guest.add(it) }
         com.droiddeck.launcher.gpu.TpUbwcHint.forThisDevice(this)?.let { guest.add("${com.droiddeck.launcher.gpu.TpUbwcHint.ENV}=$it") }
         val clientPinned = steamHere && SessionPrefs.clientCpusOverride(this)
@@ -1931,6 +1944,7 @@ class SessionService : Service() {
         private const val TRACER_NICE = -6
         private const val MIC_RELEASE_TIMEOUT_MS = 5_000L
         private const val TU_DEBUG_SWITCH = "Download/droiddeck-tu-debug"
+        private const val PAN_DEBUG_SWITCH = "Download/droiddeck-pan-debug"
         private const val GAME_TU_DEBUG = "DROIDDECK_GAME_TU_DEBUG"
         private const val LEGACY_ENV_SWITCH = "Download/droiddeck-env"
         private const val ENV_SWITCH_NAME = "droiddeck-env"

@@ -113,4 +113,33 @@ class DriverPairsTest {
         assertEquals(DriverPairs.WN_BALANCED, DriverPairs.recommendedKey(gpu(825), pairs))
         assertEquals(DriverPairs.BANNER, DriverPairs.recommendedKey(gpu(740), pairs))
     }
+
+    @Test
+    fun maliG615SuitsPanvkPair() {
+        val maliGpu = GpuInfo("Mali-G615", 615, Family.MALI_5TH_GEN, "MediaTek Dimensity 7400 Ultra", false)
+        val pair = DriverPairs.DriverPair(
+            DriverPairs.PANVK_G615,
+            "Mesa PanVK · Mali-G615 (CSF)",
+            setOf(Family.MALI_5TH_GEN, Family.MALI),
+            display = null,
+            linux = null,
+            bundle = asset("panvk-g615.zip", "v24.3.0", false, DriverPairs.PANVK_G615),
+        )
+        assertTrue(pair.suits(maliGpu))
+        val adrenoGpu = gpu(740)
+        assertFalse(pair.suits(adrenoGpu))
+    }
+
+    @Test
+    fun recommendedKeyReturnsPanvkOnMali() {
+        val maliGpu = GpuInfo("Mali-G615", 615, Family.MALI_5TH_GEN, "MediaTek Dimensity 7400 Ultra", false)
+        val panvkBundle = TurnipReleases.Asset("DroidDeck", "v24.3.0", "panvk-g615.zip", "https://example/panvk", 6_000_000,
+            false, "Android + Linux", "0".repeat(64), DriverPairs.PANVK_G615, bundle = true)
+        val pairs = DriverPairs.from(TurnipReleases.Check(
+            listOf(panvkBundle),
+            emptyList(), emptyList(), 0L,
+        ))
+        assertEquals(DriverPairs.PANVK_G615, DriverPairs.recommendedKey(maliGpu, pairs))
+        assertEquals(DriverPairs.PANVK_G615, DriverPairs.recommendedKey(maliGpu, emptyList()))
+    }
 }
