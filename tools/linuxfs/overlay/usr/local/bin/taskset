@@ -1,0 +1,9 @@
+#!/bin/sh
+case "$*" in
+  *steamwebhelper*|*vrwebhelper*)
+    export LIBGL_KOPPER_DISABLE=false DISABLE_GAMESCOPE_WSI=1 vk_xwayland_wait_ready=true
+    ;;
+esac
+REAL_TASKSET=/usr/bin/taskset
+[ -x "$REAL_TASKSET" ] || REAL_TASKSET=/bin/taskset
+exec "$REAL_TASKSET" "$@"
