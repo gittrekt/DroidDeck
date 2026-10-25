@@ -26,20 +26,27 @@ pacman -Sy --noconfirm --needed \
   python python-mako python-yaml python-pyparsing python-packaging \
   bison flex pkgconf \
   libdrm wayland wayland-protocols \
-  libx11 libxcb libxrandr libxshmfence
+  libx11 libxcb libxrandr libxshmfence \
+  clang libclc llvm spirv-llvm-translator
 
 mkdir -p out
 
 git config --global --add safe.directory '*' || true
 
+CURRENT_REPO=""
 if [ -d mesa-src/.git ]; then
-  echo "Reusing existing mesa-src, resetting to ${MESA_TAG}..."
+  CURRENT_REPO=$(git -C mesa-src config --get remote.origin.url 2>/dev/null || true)
+fi
+
+if [ -d mesa-src/.git ] && [ "$CURRENT_REPO" = "$MESA_REPO" ]; then
+  echo "Reusing existing mesa-src from ${MESA_REPO}, resetting to ${MESA_TAG}..."
+  git -C mesa-src fetch --depth 1 origin "$MESA_TAG" 2>/dev/null || true
   git -C mesa-src checkout -f "$MESA_TAG" 2>/dev/null || git -C mesa-src reset --hard "$MESA_TAG"
   git -C mesa-src clean -fd
 else
   echo "Cloning Mesa ${MESA_TAG} from ${MESA_REPO}..."
   rm -rf mesa-src
-  git clone -q --depth 1 --branch "$MESA_TAG" "$MESA_REPO" mesa-src
+  git clone --depth 1 --branch "$MESA_TAG" "$MESA_REPO" mesa-src
 fi
 
 # Determine patch profiles to apply (defaults to common + target GPU)
@@ -57,8 +64,12 @@ fi
 # 1. Apply top-level fallback patches if any exist
 if compgen -G "tools/mesa/patches/*.patch" > /dev/null; then
   for p in tools/mesa/patches/*.patch; do
-    echo "Applying top-level patch: $(basename "$p")"
-    patch -d mesa-src -p1 --no-backup-if-mismatch < "$p"
+    if patch -d mesa-src -p1 --dry-run < "$p" > /dev/null 2>&1; then
+      echo "Applying top-level patch: $(basename "$p")"
+      patch -d mesa-src -p1 --no-backup-if-mismatch < "$p"
+    else
+      echo "Notice: $(basename "$p") does not apply cleanly to this Mesa tree; skipping."
+    fi
   done
 fi
 
@@ -71,8 +82,12 @@ for profile in "${PROFILES[@]}"; do
     if compgen -G "${profile_dir}/*.patch" > /dev/null; then
       echo "=== Applying patches for [${profile_clean}] ==="
       for p in "${profile_dir}"/*.patch; do
-        echo "  Applying: $(basename "$p")"
-        patch -d mesa-src -p1 --no-backup-if-mismatch < "$p"
+        if patch -d mesa-src -p1 --dry-run < "$p" > /dev/null 2>&1; then
+          echo "  Applying: $(basename "$p")"
+          patch -d mesa-src -p1 --no-backup-if-mismatch < "$p"
+        else
+          echo "  Notice: $(basename "$p") does not apply cleanly to this Mesa tree; skipping."
+        fi
       done
     fi
   fi
@@ -96,10 +111,18 @@ MESON_OPTS=(
   -Dtools=
 )
 
+if [ -f mesa-src/meson.options ] && grep -q "panfrost-kmds" mesa-src/meson.options; then
+  MESON_OPTS+=("-Dpanfrost-kmds=panfrost,panthor,kbase")
+fi
+
 # Word splitting for EXTRA_MESON_ARGS is intentional
 # shellcheck disable=SC2086
 if [ -d mesa-src/build/meson-private ]; then
-  meson setup --reconfigure "${MESON_OPTS[@]}" $EXTRA_MESON_ARGS mesa-src/build mesa-src
+  meson setup --reconfigure "${MESON_OPTS[@]}" $EXTRA_MESON_ARGS mesa-src/build mesa-src || {
+    echo "Reconfiguration failed, wiping build dir and retrying fresh setup..."
+    rm -rf mesa-src/build
+    meson setup "${MESON_OPTS[@]}" $EXTRA_MESON_ARGS mesa-src/build mesa-src
+  }
 else
   meson setup "${MESON_OPTS[@]}" $EXTRA_MESON_ARGS mesa-src/build mesa-src
 fi

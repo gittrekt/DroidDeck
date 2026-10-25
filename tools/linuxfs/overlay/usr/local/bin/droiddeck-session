@@ -225,7 +225,8 @@ if [ -z "${BL_INSIDE:-}" ]; then
   if [ "$mode" = steam ] && [ "${BL_CURSOR_COMPOSITE:-0}" = 1 ]; then
     export gamescope_cursor_composite=2
   fi
-  args=(--backend wayland --expose-wayland -f -W "$width" -H "$height" -w "$nested" -h "$height")
+  backend=${BL_GAMESCOPE_BACKEND:-wayland}
+  args=(--backend "$backend" --expose-wayland -f -W "$width" -H "$height" -w "$nested" -h "$height")
   [ "$nested" != "$width" ] && args+=(-S stretch) && export BL_STRETCHED=1
   if [ "${BL_FPS:-0}" -gt 0 ]; then
     args+=(-r "$BL_FPS")

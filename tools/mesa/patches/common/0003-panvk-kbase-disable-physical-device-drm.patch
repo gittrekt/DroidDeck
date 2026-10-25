@@ -1,0 +1,31 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: DroidDeck Team <dev@droiddeck.app>
+Date: Sun, 25 Oct 2026 15:45:00 -0400
+Subject: [PATCH] panvk: disable VK_EXT_physical_device_drm on kbase
+
+On Android kbase (/dev/mali0), there are no DRM primary or render nodes
+(/dev/dri/card* or /dev/dri/renderD*). Advertising VK_EXT_physical_device_drm
+causes compositors like Gamescope to expect valid DRM primary and render
+device IDs, failing initialization with "physical device has no primary node".
+Follow Turnip's convention (!is_kgsl) by disabling EXT_physical_device_drm
+when running over kbase.
+
+---
+ src/panfrost/vulkan/panvk_vX_physical_device.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/panfrost/vulkan/panvk_vX_physical_device.c b/src/panfrost/vulkan/panvk_vX_physical_device.c
+index a1b2c3d..e4f5a6b 100644
+--- a/src/panfrost/vulkan/panvk_vX_physical_device.c
++++ b/src/panfrost/vulkan/panvk_vX_physical_device.c
+@@ -185,7 +185,7 @@ panvk_per_arch(get_physical_device_extensions)(
+       .EXT_non_seamless_cube_map = true,
+       .EXT_mutable_descriptor_type = PAN_ARCH >= 9,
+       .EXT_multisampled_render_to_single_sampled = true,
+-      .EXT_physical_device_drm = true,
++      .EXT_physical_device_drm = !device->kbase_node_path[0],
+       .EXT_pipeline_creation_cache_control = true,
+       .EXT_pipeline_creation_feedback = true,
+       .EXT_pipeline_robustness = true,
+-- 
+2.47.0

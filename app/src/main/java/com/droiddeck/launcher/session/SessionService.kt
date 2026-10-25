@@ -709,6 +709,7 @@ class SessionService : Service() {
         if (isTurnip) {
             (tuOverride ?: "sysmem".takeIf { tuDriver || SessionPrefs.tuSysmem(this) })?.let { guest.add("TU_DEBUG=$it") }
         } else {
+            guest.add("PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1")
             panDebugOverride()?.let { guest.add("PAN_MESA_DEBUG=$it") }
         }
         if (SessionPrefs.zinkLazy(this)) {
