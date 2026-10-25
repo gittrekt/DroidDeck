@@ -227,6 +227,13 @@ class Milestone2ChallengerTest {
             val custom = File(icdDir, "custom_icd.json").apply { writeText("{\"ICD\":{}}") }
             val fallback = LinuxRuntime.vulkanIcd(context)
             assertEquals("Fallback must return available manifest", custom, fallback)
+
+            // Case 5: On Mali with only freedreno, returns null (never Freedreno)
+            custom.delete()
+            val freedrenoOnly = File(icdDir, "freedreno_icd.json").apply { writeText("{\"ICD\":{}}") }
+            LinuxRuntime.maliDevice = fakeMali.path
+            val maliFreedrenoOnly = LinuxRuntime.vulkanIcd(context)
+            assertNull("On Mali with only freedreno present, vulkanIcd must return null", maliFreedrenoOnly)
         } finally {
             LinuxRuntime.maliDevice = prevMali
             icdDir.deleteRecursively()

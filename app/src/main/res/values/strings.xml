@@ -1332,6 +1332,7 @@
     <string name="drivers_bundle_sets_runtime">Android + Linux: sets the runtime driver with it</string>
     <string name="drivers_runtime_builtin">the Turnip built into the runtime</string>
     <string name="drivers_system_vulkan">system Vulkan: no bundled build for this GPU</string>
+    <string name="mali_requires_panvk_driver">Mali GPU requires a PanVK Linux driver: please import a compatible driver bundle in Settings → GPU drivers.</string>
     <string name="drivers_bundled">%1$s (bundled)</string>
     <string name="drivers_manual">Manual</string>
     <string name="drivers_summary">%1$s · %2$s</string>

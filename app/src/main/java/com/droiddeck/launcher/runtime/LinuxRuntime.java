@@ -105,6 +105,7 @@ public final class LinuxRuntime {
                 if (name.contains("freedreno")) return manifest;
             }
         }
+        if (isMali) return null;
         return manifests.length > 0 ? manifests[0] : null;
     }
 
@@ -236,6 +237,7 @@ public final class LinuxRuntime {
         if (unreadablePciDevice()) {
             bind(cmd, new File(root, "etc/droiddeck/empty").getPath() + ":/sys/bus/pci/devices");
         }
+        maskFreedrenoOnMali(context, root, cmd, extraBinds);
         bindGpuNode(context, cmd);
         bindAdrenoStats(cmd, extraBinds);
         bindCpuTemps(cmd, root);
@@ -254,6 +256,25 @@ public final class LinuxRuntime {
             if (!new File(device, "vendor").canRead()) return true;
         }
         return false;
+    }
+
+    private static void maskFreedrenoOnMali(Context context, File root, List<String> cmd, List<String> extraBinds) {
+        if (!new File(maliDevice).exists()) return;
+        File freedreno = new File(root, "usr/share/vulkan/icd.d/freedreno_icd.json");
+        if (!freedreno.isFile()) return;
+        if (extraBinds != null) {
+            for (String spec : extraBinds) {
+                if (spec.endsWith(":/usr/share/vulkan/icd.d/freedreno_icd.json")) return;
+            }
+        }
+        File empty = new File(liveDir(context), "empty_icd.json");
+        if (!empty.isFile()) {
+            try {
+                empty.createNewFile();
+            } catch (IOException ignored) {
+            }
+        }
+        bind(cmd, empty.getPath() + ":/usr/share/vulkan/icd.d/freedreno_icd.json");
     }
 
     private static void bindGpuNode(Context context, List<String> cmd) {

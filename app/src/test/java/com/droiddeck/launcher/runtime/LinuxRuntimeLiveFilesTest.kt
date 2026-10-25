@@ -174,6 +174,41 @@ class LinuxRuntimeLiveFilesTest {
         }
     }
 
+    @Test fun vulkanIcdReturnsNullOnMaliWhenOnlyFreedrenoPresent() {
+        val prevMali = LinuxRuntime.maliDevice
+        val fakeMali = File(root, "fake-mali0").apply { createNewFile() }
+        val icdDir = File(LinuxRuntime.rootDir(context), "usr/share/vulkan/icd.d").apply { mkdirs() }
+        val freedreno = File(icdDir, "freedreno_icd.json").apply { writeText("{}") }
+        try {
+            LinuxRuntime.maliDevice = fakeMali.path
+            org.junit.Assert.assertNull(LinuxRuntime.vulkanIcd(context))
+        } finally {
+            LinuxRuntime.maliDevice = prevMali
+            freedreno.delete()
+        }
+    }
+
+    @Test fun bindsMasksFreedrenoOnMali() {
+        val prevMali = LinuxRuntime.maliDevice
+        val fakeMali = File(root, "fake-mali0").apply { createNewFile() }
+        val icdDir = File(LinuxRuntime.rootDir(context), "usr/share/vulkan/icd.d").apply { mkdirs() }
+        val freedreno = File(icdDir, "freedreno_icd.json").apply { writeText("{}") }
+        try {
+            LinuxRuntime.maliDevice = fakeMali.path
+            val binds = LinuxRuntime.binds(context, null, null, null, null)
+            assertTrue("Binds on Mali must mask freedreno_icd.json",
+                binds.any { it.endsWith(":/usr/share/vulkan/icd.d/freedreno_icd.json") })
+
+            LinuxRuntime.maliDevice = File(root, "nonexistent-mali").path
+            val adrenoBinds = LinuxRuntime.binds(context, null, null, null, null)
+            assertFalse("Binds on Adreno must not mask freedreno_icd.json",
+                adrenoBinds.any { it.endsWith(":/usr/share/vulkan/icd.d/freedreno_icd.json") })
+        } finally {
+            LinuxRuntime.maliDevice = prevMali
+            freedreno.delete()
+        }
+    }
+
     private fun runtime() = LinuxRuntime.rootDir(context).apply {
         mkdirs()
         File(this, "runtime-file").writeText("installed")

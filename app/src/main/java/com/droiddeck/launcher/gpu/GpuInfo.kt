@@ -72,7 +72,10 @@ data class GpuInfo(
     companion object {
         private const val UNNAMED = "this GPU"
 
+        internal var overrideGpu: GpuInfo? = null
+
         fun detect(): GpuInfo {
+            overrideGpu?.let { return it }
             val adreno = File("/sys/class/kgsl/kgsl-3d0").exists() || File("/vendor/lib64/hw/vulkan.adreno.so").exists()
             val mali = !adreno && (File("/dev/mali0").exists() || File("/vendor/lib64/hw/vulkan.mali.so").exists())
             val raw = if (adreno) FileUtils.readString(File("/sys/class/kgsl/kgsl-3d0/gpu_model"))?.trim() else null

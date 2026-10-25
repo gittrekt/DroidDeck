@@ -2108,6 +2108,15 @@ class FrontEndActivity : ComponentActivity() {
         }
         val warn = installed == null && !com.droiddeck.launcher.core.DeviceSupport.supported()
         if (warn && available != null) { showNonAdreno = available; return false }
+        if (com.droiddeck.launcher.core.DeviceSupport.mali()) {
+            val chosen = SessionPrefs.linuxDriver(this)
+            val hasDriver = if (chosen.isNotEmpty()) com.droiddeck.launcher.gpu.LinuxVulkanDriverManager(this).isInstalled(chosen)
+                else com.droiddeck.launcher.runtime.LinuxRuntime.vulkanIcd(this) != null
+            if (!hasDriver) {
+                android.widget.Toast.makeText(this, R.string.mali_requires_panvk_driver, android.widget.Toast.LENGTH_LONG).show()
+                return false
+            }
+        }
         startActivity(intent)
         return true
     }

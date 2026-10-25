@@ -9,8 +9,10 @@ object DeviceSupport {
     fun adreno(): Boolean =
         File("/sys/class/kgsl/kgsl-3d0").exists() || File("/vendor/lib64/hw/vulkan.adreno.so").exists()
 
+    internal var maliOverride: Boolean? = null
+
     fun mali(): Boolean =
-        File("/dev/mali0").exists() || File("/vendor/lib64/hw/vulkan.mali.so").exists()
+        maliOverride ?: (File("/dev/mali0").exists() || File("/vendor/lib64/hw/vulkan.mali.so").exists())
 
     fun supported(): Boolean = adreno() || mali()
 

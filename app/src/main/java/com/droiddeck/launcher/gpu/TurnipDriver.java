@@ -284,7 +284,12 @@ public final class TurnipDriver {
         }
         String quest = QuestExperimental.INSTANCE.defaultAndroidDriver();
         if (quest != null) return quest;
-        int model = GpuInfo.Companion.detect().getModel();
+        GpuInfo gpu = GpuInfo.Companion.detect();
+        if (gpu.getFamily() == GpuInfo.Family.MALI_5TH_GEN || gpu.getFamily() == GpuInfo.Family.MALI) {
+            Log.i(TAG, "mali gpu detected (" + gpu.getFamily() + "): using system vulkan driver");
+            return null;
+        }
+        int model = gpu.getModel();
         Log.i(TAG, "gpu model: " + (model == 0 ? "unknown" : model));
         return chooseByModel(model, android.os.Build.VERSION.SDK_INT);
     }

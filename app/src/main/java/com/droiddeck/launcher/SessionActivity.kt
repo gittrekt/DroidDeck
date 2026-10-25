@@ -454,6 +454,16 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
             finish()
             return
         }
+        if (com.droiddeck.launcher.core.DeviceSupport.mali()) {
+            val chosen = SessionPrefs.linuxDriver(this)
+            val hasDriver = if (chosen.isNotEmpty()) com.droiddeck.launcher.gpu.LinuxVulkanDriverManager(this).isInstalled(chosen)
+                else com.droiddeck.launcher.runtime.LinuxRuntime.vulkanIcd(this) != null
+            if (!hasDriver) {
+                android.widget.Toast.makeText(this, R.string.mali_requires_panvk_driver, android.widget.Toast.LENGTH_LONG).show()
+                finish()
+                return
+            }
+        }
         if (!SessionState.running && SessionState.phase in setOf(SessionPhase.IDLE, SessionPhase.FAILED)) {
             val mode = intent.getStringExtra(SessionService.EXTRA_MODE) ?: SessionService.MODE_STEAM
             SessionState.programArgs = intent.getStringArrayExtra(SessionService.EXTRA_PROGRAM_ARGS)?.toList().orEmpty()

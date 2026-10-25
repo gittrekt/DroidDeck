@@ -43,4 +43,25 @@ class TurnipDriverAutoTest {
         assertEquals("turnip25.1.0", TurnipDriver.chooseByModel(0, 28))
         assertEquals("turnip-sdk36", TurnipDriver.chooseByModel(0, 36))
     }
+
+    @Test fun maliDevicesUseSystemVulkanDriver() {
+        val driver = TurnipDriver(RuntimeEnvironment.getApplication())
+        val g615 = GpuInfo("Mali-G615", 615, GpuInfo.Family.MALI_5TH_GEN, "MediaTek Dimensity 7400 Ultra", false)
+        try {
+            GpuInfo.overrideGpu = g615
+            assertEquals("system", driver.autoId())
+            org.junit.Assert.assertNull(driver.install())
+        } finally {
+            GpuInfo.overrideGpu = null
+        }
+
+        val g715 = GpuInfo("Mali-G715", 715, GpuInfo.Family.MALI, "", false)
+        try {
+            GpuInfo.overrideGpu = g715
+            assertEquals("system", driver.autoId())
+            org.junit.Assert.assertNull(driver.install())
+        } finally {
+            GpuInfo.overrideGpu = null
+        }
+    }
 }
