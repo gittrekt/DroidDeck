@@ -28,11 +28,17 @@ pacman -Sy --noconfirm --needed \
   libdrm wayland wayland-protocols \
   libx11 libxcb libxrandr libxshmfence
 
-rm -rf mesa-src out
 mkdir -p out
 
-echo "Cloning Mesa ${MESA_TAG} from ${MESA_REPO}..."
-git clone -q --depth 1 --branch "$MESA_TAG" "$MESA_REPO" mesa-src
+if [ -d mesa-src/.git ]; then
+  echo "Reusing existing mesa-src, resetting to ${MESA_TAG}..."
+  git -C mesa-src checkout -f "$MESA_TAG" 2>/dev/null || git -C mesa-src reset --hard "$MESA_TAG"
+  git -C mesa-src clean -fd
+else
+  echo "Cloning Mesa ${MESA_TAG} from ${MESA_REPO}..."
+  rm -rf mesa-src
+  git clone -q --depth 1 --branch "$MESA_TAG" "$MESA_REPO" mesa-src
+fi
 
 # Determine patch profiles to apply (defaults to common + target GPU)
 if [ -z "${MESA_PATCHES:-}" ]; then
@@ -71,24 +77,30 @@ for profile in "${PROFILES[@]}"; do
 done
 
 echo "Configuring Mesa build for Vulkan drivers: ${VULKAN_DRIVERS} (Target: ${PANVK_TARGET})..."
+MESON_OPTS=(
+  --prefix=/usr
+  --buildtype=release
+  --strip
+  -Db_ndebug=true
+  -Dvulkan-drivers="$VULKAN_DRIVERS"
+  -Dgallium-drivers=
+  -Dplatforms=wayland,x11
+  -Dglx=disabled
+  -Degl=disabled
+  -Dgbm=disabled
+  -Dgles1=disabled
+  -Dgles2=disabled
+  -Dshared-glapi=disabled
+  -Dtools=
+)
+
 # Word splitting for EXTRA_MESON_ARGS is intentional
 # shellcheck disable=SC2086
-meson setup mesa-src/build mesa-src \
-  --prefix=/usr \
-  --buildtype=release \
-  --strip \
-  -Db_ndebug=true \
-  -Dvulkan-drivers="$VULKAN_DRIVERS" \
-  -Dgallium-drivers= \
-  -Dplatforms=wayland,x11 \
-  -Dglx=disabled \
-  -Degl=disabled \
-  -Dgbm=disabled \
-  -Dgles1=disabled \
-  -Dgles2=disabled \
-  -Dshared-glapi=disabled \
-  -Dtools= \
-  $EXTRA_MESON_ARGS
+if [ -d mesa-src/build/meson-private ]; then
+  meson setup --reconfigure "${MESON_OPTS[@]}" $EXTRA_MESON_ARGS mesa-src/build mesa-src
+else
+  meson setup "${MESON_OPTS[@]}" $EXTRA_MESON_ARGS mesa-src/build mesa-src
+fi
 
 echo "Compiling Mesa..."
 ninja -C mesa-src/build
