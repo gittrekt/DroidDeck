@@ -77,8 +77,11 @@ public final class LinuxRuntimeInstaller {
     private static final Object JOB_LOCK = new Object();
     private static Job running;
     private static volatile String removalError;
+    private static volatile String lastError;
 
     private LinuxRuntimeInstaller() {}
+
+    public static String lastError() { return lastError != null ? lastError : removalError; }
 
     public static String installedVersion(Context context) {
         File marker = new File(LinuxRuntime.rootDir(context), VERSION_FILE);
@@ -111,7 +114,7 @@ public final class LinuxRuntimeInstaller {
         synchronized (JOB_LOCK) {
             if (running != null && (running.removal || running.maintenance)) return false;
             owner = running == null;
-            if (owner) { running = new Job(false, context.getString(R.string.user_apps_starting)); removalError = null; }
+            if (owner) { running = new Job(false, context.getString(R.string.user_apps_starting)); removalError = null; lastError = null; }
             job = running;
             if (listener != null) job.listeners.add(listener);
         }
@@ -272,6 +275,7 @@ public final class LinuxRuntimeInstaller {
             });
             if (!ok) {
                 Log.w(TAG, "download failed");
+                lastError = "Download failed: " + release.url;
                 keepPartial = true;
                 return false;
             }
@@ -280,6 +284,7 @@ public final class LinuxRuntimeInstaller {
             String actual = Hashes.sha256(archive);
             if (!release.sha256.equalsIgnoreCase(actual)) {
                 Log.w(TAG, "checksum mismatch: wanted " + release.sha256 + ", got " + actual);
+                lastError = "Checksum mismatch: wanted " + release.sha256 + ", got " + actual;
                 return false;
             }
 
@@ -287,19 +292,25 @@ public final class LinuxRuntimeInstaller {
             File staging = new File(root.getParentFile(), LinuxRuntime.DIR + ".new");
             File old = new File(root.getParentFile(), LinuxRuntime.DIR + ".old");
             recoverInterruptedSwap(root, staging, old);
-            if (!discard(staging, null) || !staging.mkdirs()) return false;
+            if (!discard(staging, null) || !staging.mkdirs()) {
+                lastError = "Cannot create staging directory: " + staging;
+                return false;
+            }
             if (listener != null) listener.onProgress(context.getString(R.string.rtinst_extracting), -1);
             if (!extract(context, archive, staging, listener)) {
+                if (lastError == null) lastError = "Failed to extract runtime archive";
                 RuntimeFileTree.delete(staging, null);
                 return false;
             }
             FileUtils.writeString(new File(staging, VERSION_FILE), release.version);
 
             if (!discard(old, null)) {
+                lastError = "Cannot clear previous runtime backup";
                 discard(staging, null);
                 return false;
             }
             if (root.isDirectory() && !root.renameTo(old)) {
+                lastError = "Cannot move old runtime aside";
                 RuntimeFileTree.delete(staging, null);
                 return false;
             }
@@ -308,6 +319,7 @@ public final class LinuxRuntimeInstaller {
                 RuntimeFileTree.carryHome(old, staging);
             } catch (IOException e) {
                 Log.w(TAG, "could not carry root across the update; rolling back", e);
+                lastError = "Could not preserve user data across update: " + e.getMessage();
                 old.renameTo(root);
                 try { RuntimeFileTree.delete(staging, null); }
                 catch (IOException cleanup) { Log.w(TAG, "could not clear the failed staging tree", cleanup); }
@@ -315,15 +327,21 @@ public final class LinuxRuntimeInstaller {
             }
 
             if (!staging.renameTo(root)) {
+                lastError = "Cannot move new runtime into place";
                 File keptTo = new File(staging, USER_DATA);
                 if (keptTo.isDirectory() && old.isDirectory()) keptTo.renameTo(new File(old, USER_DATA));
                 if (old.isDirectory()) old.renameTo(root);
                 return false;
             }
             discard(old, null);
-            return LinuxRuntime.isInstalled(context);
+            boolean installed = LinuxRuntime.isInstalled(context);
+            if (!installed) {
+                lastError = "Runtime incomplete after extraction (missing gamescope or proot binary)";
+            }
+            return installed;
         } catch (Exception e) {
             Log.e(TAG, "install", e);
+            lastError = e.getMessage() != null && !e.getMessage().isEmpty() ? e.getMessage() : e.toString();
             return false;
         } finally {
             if (!keepPartial) archive.delete();
@@ -534,6 +552,7 @@ public final class LinuxRuntimeInstaller {
             return true;
         } catch (Exception e) {
             Log.e(TAG, "extract", e);
+            lastError = "Failed to extract: " + (e.getMessage() != null && !e.getMessage().isEmpty() ? e.getMessage() : e.toString());
             return false;
         }
     }

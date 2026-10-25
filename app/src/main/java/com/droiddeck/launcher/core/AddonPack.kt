@@ -34,7 +34,7 @@ internal class AddonPack(
     val state: StateFlow<State> = mutableState.asStateFlow()
     private val lock = Any()
 
-    val available: Boolean get() = sha256.isNotEmpty()
+    val available: Boolean get() = sha256.isNotEmpty() || UPSTREAM_FALLBACKS.containsKey(name)
     private val tag get() = "pack-$name-${sha256.take(16)}"
     private val urls get() = listOfNotNull(
         "https://github.com/$REPO/releases/download/$tag/$name.tar.zst",
@@ -98,32 +98,78 @@ internal class AddonPack(
     }
 
     private fun install(context: Context): Boolean {
+        val root = root(context).apply { mkdirs() }
+
+        // Local external pack staging (e.g. pushed via deploy_local.sh for developer builds)
+        val externalPack = context.getExternalFilesDir("packs")?.let { File(it, "$name.tar.zst") }?.takeIf { it.isFile }
+        if (externalPack != null) {
+            val staging = File(root, "$name.external.partial")
+            staging.deleteRecursively()
+            try {
+                if (FileInputStream(externalPack).use { TarZst.extract(it, staging) } &&
+                    required.all { File(staging, it).isFile }) {
+                    val digest = Hashes.sha256(externalPack)
+                    File(staging, COMPLETE).writeText(digest)
+                    val target = if (sha256.isNotEmpty()) File(root, sha256) else File(root, digest)
+                    target.deleteRecursively()
+                    if (staging.renameTo(target)) {
+                        Log.i(TAG, "$name: successfully installed from local external pack $externalPack ($digest)")
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "$name: failed to install from external pack $externalPack", e)
+            } finally {
+                staging.deleteRecursively()
+            }
+        }
+
         if (!available) {
             Log.w(TAG, if (reuseDeviceCopy) "$name: this build has no pack and none is installed" else "$name: this build has no pack")
             return false
         }
-        val root = root(context).apply { mkdirs() }
-        val archive = File(root, "$sha256.tar.zst")
-        val downloaded = urls.any { url ->
-            Downloader.downloadFile(url, archive, true, sha256) { p -> mutableState.value = State.Downloading(p.coerceIn(0f, 1f)) }
-                .also { if (!it) archive.delete() }
+
+        val candidates = mutableListOf<Pair<String, String>>()
+        if (sha256.isNotEmpty()) {
+            urls.forEach { candidates.add(it to sha256) }
         }
-        if (!downloaded) return false
-        val staging = File(root, "$sha256.partial")
-        staging.deleteRecursively()
-        try {
-            if (!FileInputStream(archive).use { TarZst.extract(it, staging) }) return false
-            check(required.all { File(staging, it).isFile }) { "$name pack is incomplete" }
-            File(staging, COMPLETE).writeText(sha256)
-            val target = dir(context)
-            target.deleteRecursively()
-            check(staging.renameTo(target)) { "could not move the $name pack into place" }
-        } finally {
+        val fallbackSha = UPSTREAM_FALLBACKS[name]
+        if (fallbackSha != null && fallbackSha != sha256) {
+            val fallbackTag = "pack-$name-${fallbackSha.take(16)}"
+            candidates.add("https://github.com/$REPO/releases/download/$fallbackTag/$name.tar.zst" to fallbackSha)
+        }
+
+        for ((url, expectedSha) in candidates) {
+            val archive = File(root, "$expectedSha.tar.zst")
+            val downloaded = Downloader.downloadFile(url, archive, true, expectedSha) { p ->
+                mutableState.value = State.Downloading(p.coerceIn(0f, 1f))
+            }.also { if (!it) archive.delete() }
+
+            if (!downloaded) continue
+
+            val staging = File(root, "$expectedSha.partial")
             staging.deleteRecursively()
-            archive.delete()
+            try {
+                if (!FileInputStream(archive).use { TarZst.extract(it, staging) }) continue
+                if (!required.all { File(staging, it).isFile }) continue
+                File(staging, COMPLETE).writeText(expectedSha)
+                val target = if (sha256.isNotEmpty()) File(root, sha256) else File(root, expectedSha)
+                target.deleteRecursively()
+                if (!staging.renameTo(target)) continue
+                if (target.name != expectedSha) {
+                    val fallbackTarget = File(root, expectedSha)
+                    if (!fallbackTarget.exists()) {
+                        runCatching { java.nio.file.Files.createSymbolicLink(fallbackTarget.toPath(), target.toPath()) }
+                    }
+                }
+                root.listFiles().orEmpty().filter { it.name != sha256 && it.name != expectedSha }.forEach { it.deleteRecursively() }
+                return true
+            } finally {
+                staging.deleteRecursively()
+                archive.delete()
+            }
         }
-        root.listFiles().orEmpty().filter { it.name != sha256 }.forEach { it.deleteRecursively() }
-        return true
+        return false
     }
 
     companion object {
@@ -132,6 +178,14 @@ internal class AddonPack(
         private const val PR_REPO = "Droid-Deck/DroidDeck-CI"
         const val COMPLETE = ".complete"
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        internal val UPSTREAM_FALLBACKS = mapOf(
+            "proot" to "5a2b7284e6357f88a14a790abd54e61effbe5f202c63b6aaba9b974c559649c3",
+            "directaudio" to "fd65f0c1e68234cac18796cfd7d43dad46334988dad1eb20fc082952d83efa7e",
+            "tracking" to "6b033308a33575947b75eee0bab093bf7dd58c57f71ed81ddc09a859f4df8dde",
+            "xbox" to "72d90393b09d260558717215b58b1925345cc8d39d8980009fd062919c764e1d",
+            "comet" to "fdc66ee6ae44ccdb119e18ed4c5b86a0cca200dc10ddcd1958a55c32ca42937f",
+        )
 
         @JvmField
         val PROOT = AddonPack("proot", BuildConfig.PACK_PROOT_SHA256, BuildConfig.PACK_PROOT_SIZE,

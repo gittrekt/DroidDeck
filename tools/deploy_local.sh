@@ -20,3 +20,13 @@ serial=$(python3 "${repo_root}/tools/adb_device.py" --adb "${adb_bin}")
 "${adb_bin}" -s "${serial}" install -r --no-incremental "${apk}"
 installed_path=$("${adb_bin}" -s "${serial}" shell pm path com.droiddeck.launcher | tr -d '\r')
 printf 'Installed on %s: %s\n' "${serial}" "${installed_path}"
+
+if [[ -d "${repo_root}/app/build/packs" ]]; then
+    echo "Staging local add-on packs to device..."
+    "${adb_bin}" -s "${serial}" shell "mkdir -p /sdcard/Android/data/com.droiddeck.launcher/files/packs"
+    for pack in "${repo_root}/app/build/packs"/*.tar.zst; do
+        if [[ -f "${pack}" ]]; then
+            "${adb_bin}" -s "${serial}" push "${pack}" /sdcard/Android/data/com.droiddeck.launcher/files/packs/
+        fi
+    done
+fi

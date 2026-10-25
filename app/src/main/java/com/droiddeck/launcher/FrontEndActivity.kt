@@ -2197,8 +2197,9 @@ class FrontEndActivity : ComponentActivity() {
             ui.post {
                 busy = false
                 if (ok != null) failed = !ok
-                if (ok == false) LinuxRuntimeInstaller.removalError()?.let {
-                    android.widget.Toast.makeText(this, it, android.widget.Toast.LENGTH_LONG).show()
+                if (ok == false) {
+                    val msg = LinuxRuntimeInstaller.lastError() ?: getString(R.string.session_runtime_install_failed)
+                    android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_LONG).show()
                 }
                 refresh()
             }

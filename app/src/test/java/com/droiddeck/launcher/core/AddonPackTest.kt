@@ -54,4 +54,11 @@ class AddonPackTest {
         installed("b".repeat(64))
         assertFalse(AddonPack("sample", "", 0L, listOf("tool"), reuseDeviceCopy = false).installed(context))
     }
+
+    @Test fun upstreamFallbackAvailableForKnownPacks() {
+        val prootPack = AddonPack("proot", "", 0L, listOf("libproot.so"))
+        assertTrue(prootPack.available)
+        val samplePack = AddonPack("sample", "", 0L, listOf("tool"))
+        assertFalse(samplePack.available)
+    }
 }
