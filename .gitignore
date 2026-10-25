@@ -34,3 +34,5 @@ __pycache__/
 app/src/main/assets/directaudio/
 /tools/vr/out/
 .venv/
+mesa-src/
+out/
