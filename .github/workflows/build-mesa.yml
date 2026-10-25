@@ -1,0 +1,68 @@
+name: Build Mesa PanVK (Mali Vulkan)
+
+on:
+  push:
+    paths:
+      - 'tools/mesa/**'
+      - '.github/workflows/build-mesa.yml'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'PanVK GPU target architecture (csf, valhall, bifrost, all)'
+        required: false
+        default: 'csf'
+      vulkan_drivers:
+        description: 'Meson vulkan-drivers value'
+        required: false
+        default: 'panfrost'
+      version:
+        description: 'Mesa git tag or branch to clone (empty = default in release.env)'
+        required: false
+        default: ''
+      tag:
+        description: 'Release tag to publish as (e.g. panvk-24.3.4-csf); empty = artifact only'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build in Arch Linux ARM
+        env:
+          PANVK_TARGET: ${{ inputs.target || 'csf' }}
+          VULKAN_DRIVERS: ${{ inputs.vulkan_drivers || 'panfrost' }}
+          MESA_TAG: ${{ inputs.version || '' }}
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -e PANVK_TARGET="$PANVK_TARGET" \
+            -e VULKAN_DRIVERS="$VULKAN_DRIVERS" \
+            ${MESA_TAG:+-e MESA_TAG="$MESA_TAG"} \
+            -v "$PWD:/work" \
+            -w /work \
+            menci/archlinuxarm:base-devel \
+            bash tools/mesa/build-in-arch.sh
+          sudo chown -R "$(id -u):$(id -g)" out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: panvk-${{ inputs.target || 'csf' }}
+          path: |
+            out/panvk-*
+      - name: Publish
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RELEASE_TAG="${{ inputs.tag }}"
+          gh release create "$RELEASE_TAG" --latest=false --prerelease=false \
+            --title "$RELEASE_TAG" \
+            --notes "Mesa PanVK driver bundle for Mali (${{ inputs.target || 'csf' }}). Includes zip for DroidDeck UI import and tzst for container sysroot." \
+            out/panvk-* || gh release upload "$RELEASE_TAG" out/panvk-* --clobber
+          gh release edit "$RELEASE_TAG" --latest=false --prerelease=false
