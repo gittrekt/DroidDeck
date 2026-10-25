@@ -30,6 +30,8 @@ pacman -Sy --noconfirm --needed \
 
 mkdir -p out
 
+git config --global --add safe.directory '*' || true
+
 if [ -d mesa-src/.git ]; then
   echo "Reusing existing mesa-src, resetting to ${MESA_TAG}..."
   git -C mesa-src checkout -f "$MESA_TAG" 2>/dev/null || git -C mesa-src reset --hard "$MESA_TAG"
