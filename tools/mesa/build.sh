@@ -106,6 +106,7 @@ echo "======================================"
 DOCKER_IMAGE=${DROIDDECK_ARCH_IMAGE:-menci/archlinuxarm:base-devel}
 
 docker run --rm \
+  --platform linux/arm64 \
   -e MESA_TAG="${MESA_TAG}" \
   -e MESA_REPO="${MESA_REPO}" \
   -e VULKAN_DRIVERS="${VULKAN_DRIVERS}" \
@@ -120,7 +121,7 @@ docker run --rm \
 if [[ -d "${repo_root}/out" ]]; then
   # Restore permissions if run on Linux host
   if command -v id >/dev/null 2>&1; then
-    docker run --rm -v "${repo_root}:/work" -w /work "${DOCKER_IMAGE}" chown -R "$(id -u):$(id -g)" out mesa-src 2>/dev/null || true
+    docker run --rm --platform linux/arm64 -v "${repo_root}:/work" -w /work "${DOCKER_IMAGE}" chown -R "$(id -u):$(id -g)" out mesa-src 2>/dev/null || true
   fi
 fi
 
