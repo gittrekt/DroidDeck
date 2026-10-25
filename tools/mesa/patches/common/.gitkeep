@@ -1,0 +1,1 @@
+# Common patches applicable across all GPU targets (e.g. WSI workarounds, generic PRoot fixes)

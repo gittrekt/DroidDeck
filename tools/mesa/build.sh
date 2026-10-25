@@ -14,6 +14,7 @@ MESA_TAG=${MESA_TAG:-mesa-24.3.4}
 MESA_REPO=${MESA_REPO:-https://gitlab.freedesktop.org/mesa/mesa.git}
 VULKAN_DRIVERS=${VULKAN_DRIVERS:-panfrost}
 PANVK_TARGET=${PANVK_TARGET:-csf}
+MESA_PATCHES=${MESA_PATCHES:-}
 EXTRA_MESON_ARGS=${EXTRA_MESON_ARGS:-}
 
 usage() {
@@ -25,6 +26,7 @@ Builds Mesa PanVK Vulkan drivers for DroidDeck inside an Arch Linux ARM Docker c
 Options:
   --target <target>     GPU generation target (csf, valhall, bifrost, all) [default: ${PANVK_TARGET}]
   --drivers <drivers>   Meson vulkan-drivers value (e.g. panfrost, freedreno) [default: ${VULKAN_DRIVERS}]
+  --patches <list>      Comma-separated patch subdirectories under tools/mesa/patches (e.g. common,mali-g615)
   --version <tag>       Mesa git tag or branch to clone [default: ${MESA_TAG}]
   --repo <url>          Mesa git repository URL [default: ${MESA_REPO}]
   --extra <args>        Extra Meson setup arguments [default: "${EXTRA_MESON_ARGS}"]
@@ -33,19 +35,20 @@ Options:
 Environment variables:
   PANVK_TARGET          Same as --target
   VULKAN_DRIVERS        Same as --drivers
+  MESA_PATCHES          Same as --patches
   MESA_TAG              Same as --version
   MESA_REPO             Same as --repo
   EXTRA_MESON_ARGS      Same as --extra
 
 Examples:
-  # Default: build PanVK for Mali-G615 (CSF)
+  # Default: build PanVK for Mali-G615 (CSF) with common + mali-g615 patches
   $(basename "$0")
 
-  # Build for Valhall:
-  $(basename "$0") --target valhall
+  # Build for Valhall with custom patch sets:
+  $(basename "$0") --target valhall --patches common,valhall
 
-  # Build via environment variable:
-  PANVK_TARGET=valhall $(basename "$0")
+  # Build with specific device patches:
+  MESA_PATCHES=common,mali-g615 $(basename "$0")
 EOF
   exit 0
 }
@@ -58,6 +61,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --drivers)
       VULKAN_DRIVERS="$2"
+      shift 2
+      ;;
+    --patches)
+      MESA_PATCHES="$2"
       shift 2
       ;;
     --version)
@@ -92,6 +99,7 @@ echo "  Repository:     ${MESA_REPO}"
 echo "  Version/Tag:    ${MESA_TAG}"
 echo "  Vulkan Drivers: ${VULKAN_DRIVERS}"
 echo "  PanVK Target:   ${PANVK_TARGET}"
+echo "  Patch Profiles: ${MESA_PATCHES:-auto (common,${PANVK_TARGET})}"
 echo "  Extra Meson:    ${EXTRA_MESON_ARGS}"
 echo "======================================"
 
@@ -102,6 +110,7 @@ docker run --rm \
   -e MESA_REPO="${MESA_REPO}" \
   -e VULKAN_DRIVERS="${VULKAN_DRIVERS}" \
   -e PANVK_TARGET="${PANVK_TARGET}" \
+  -e MESA_PATCHES="${MESA_PATCHES}" \
   -e EXTRA_MESON_ARGS="${EXTRA_MESON_ARGS}" \
   -v "${repo_root}:/work" \
   -w /work \

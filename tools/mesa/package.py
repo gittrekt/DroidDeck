@@ -47,6 +47,14 @@ def generate_meta(target: str, version: str, library_name: str) -> dict:
             "PanVK Mali-G615 (CSF)",
             "PanVK Mesa Vulkan driver for Arm 5th Gen (CSF v10+) Mali-G615/G715/G720",
         ),
+        "mali-g615": (
+            "PanVK Mali-G615 (CSF)",
+            "PanVK Mesa Vulkan driver for Arm 5th Gen (CSF v10+) Mali-G615/G715/G720",
+        ),
+        "g615": (
+            "PanVK Mali-G615 (CSF)",
+            "PanVK Mesa Vulkan driver for Arm 5th Gen (CSF v10+) Mali-G615/G715/G720",
+        ),
         "valhall": (
             "PanVK Mali Valhall",
             "PanVK Mesa Vulkan driver for Arm Mali Valhall (v9 JM) GPUs (G57/G77/G78)",

@@ -85,6 +85,8 @@ class MesaPackagingTest(unittest.TestCase):
     def test_generate_meta_supports_multiple_gpu_targets(self):
         targets = {
             "csf": "PanVK Mali-G615 (CSF)",
+            "mali-g615": "PanVK Mali-G615 (CSF)",
+            "g615": "PanVK Mali-G615 (CSF)",
             "valhall": "PanVK Mali Valhall",
             "bifrost": "PanVK Mali Bifrost",
             "all": "PanVK Mali Unified",

@@ -34,13 +34,41 @@ mkdir -p out
 echo "Cloning Mesa ${MESA_TAG} from ${MESA_REPO}..."
 git clone -q --depth 1 --branch "$MESA_TAG" "$MESA_REPO" mesa-src
 
-# Apply local patches if any exist
+# Determine patch profiles to apply (defaults to common + target GPU)
+if [ -z "${MESA_PATCHES:-}" ]; then
+  case "$PANVK_TARGET" in
+    csf|mali-g615|g615)
+      MESA_PATCHES="common,mali-g615,csf"
+      ;;
+    *)
+      MESA_PATCHES="common,${PANVK_TARGET}"
+      ;;
+  esac
+fi
+
+# 1. Apply top-level fallback patches if any exist
 if compgen -G "tools/mesa/patches/*.patch" > /dev/null; then
   for p in tools/mesa/patches/*.patch; do
-    echo "Applying patch: $(basename "$p")"
+    echo "Applying top-level patch: $(basename "$p")"
     patch -d mesa-src -p1 --no-backup-if-mismatch < "$p"
   done
 fi
+
+# 2. Apply structured patches from tools/mesa/patches/{gpu or common indicator}
+IFS=',' read -ra PROFILES <<< "$MESA_PATCHES"
+for profile in "${PROFILES[@]}"; do
+  profile_clean=$(echo "$profile" | tr -d ' ')
+  profile_dir="tools/mesa/patches/${profile_clean}"
+  if [ -d "$profile_dir" ]; then
+    if compgen -G "${profile_dir}/*.patch" > /dev/null; then
+      echo "=== Applying patches for [${profile_clean}] ==="
+      for p in "${profile_dir}"/*.patch; do
+        echo "  Applying: $(basename "$p")"
+        patch -d mesa-src -p1 --no-backup-if-mismatch < "$p"
+      done
+    fi
+  fi
+done
 
 echo "Configuring Mesa build for Vulkan drivers: ${VULKAN_DRIVERS} (Target: ${PANVK_TARGET})..."
 # Word splitting for EXTRA_MESON_ARGS is intentional
