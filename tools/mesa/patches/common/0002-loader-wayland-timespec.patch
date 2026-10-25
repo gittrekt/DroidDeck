@@ -1,0 +1,18 @@
+From: DroidDeck Team <dev@droiddeck.org>
+Subject: [PATCH] loader: include util/timespec.h in loader_wayland_helper.c
+
+Fixes implicit declaration of timespec_sub_saturate when building with
+wayland platform support.
+
+diff --git a/src/loader/loader_wayland_helper.c b/src/loader/loader_wayland_helper.c
+index 5953f3e..960264b 100644
+--- a/src/loader/loader_wayland_helper.c
++++ b/src/loader/loader_wayland_helper.c
+@@ -24,6 +24,7 @@
+ #include <errno.h>
+ 
+ #include "util/perf/cpu_trace.h"
++#include "util/timespec.h"
+ 
+ #include "loader_wayland_helper.h"
+ 
