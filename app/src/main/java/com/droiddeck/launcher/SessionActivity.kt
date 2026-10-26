@@ -2607,7 +2607,15 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         if (::touchpad.isInitialized) touchpad.cancel()
         if (::directTouchHold.isInitialized) directTouchHold.cancel()
         if (::scrollTouch.isInitialized) scrollTouch.cancel()
-        if (CompositorHost.isStarted) WaylandCompositor.nativeSendTouch(3, -1, 0, 0)
+        val directNow = !usingTouchpad()
+        val directNext = when (next) {
+            SessionPrefs.TOUCH_PAD -> false
+            SessionPrefs.TOUCH_DIRECT -> true
+            SessionPrefs.TOUCH_GESTURES -> false
+            SessionPrefs.TOUCH_OFF -> false
+            else -> SessionState.mode == SessionService.MODE_STEAM && SessionState.steamUi != "desktop"
+        }
+        if (CompositorHost.isStarted && directNow && !directNext) WaylandCompositor.nativeSendTouch(3, -1, 0, 0)
         if (next == SessionPrefs.TOUCH_OFF) cursorVisible = false
         routedTouchMode = next
     }

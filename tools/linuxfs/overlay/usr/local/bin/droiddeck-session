@@ -816,10 +816,14 @@ BUSCONF
     _bl_ui=(-gamepadui)
     [ "${BL_STEAM_UI:-}" = desktop ] && _bl_ui=()
     _bl_cef=(-cef-force-gpu -cef-use-gl=angle -cef-use-angle=vulkan)
-    [ "${steam_cef_gpu:-1}" = 1 ] || _bl_cef=(-cef-disable-gpu)
+    if [ "${steam_cef_gpu:-1}" != 1 ]; then
+      _bl_cef=(-cef-disable-gpu)
+      export BL_WEBHELPER_ARGS="${BL_WEBHELPER_ARGS:-"--no-zygote --in-process-gpu -AudioServiceOutOfProcess"} --disable-blink-features=CSSBackdropFilter"
+    fi
     if [ "${BL_DESKTOP:-}" = 1 ] && [ "${BL_STEAM_UI:-}" = desktop ]; then
       _bl_cef=(-cef-disable-gpu)
       _bl_ui=(-nobigpicture)
+      export BL_WEBHELPER_ARGS="${BL_WEBHELPER_ARGS:-"--no-zygote --in-process-gpu -AudioServiceOutOfProcess"} --disable-blink-features=CSSBackdropFilter"
     fi
     if [ "${BL_STEAM_UI:-}" != desktop ]; then
       if [ "$steam_x64" = 0 ] || [ "${BL_X64_DECK:-1}" != 0 ]; then

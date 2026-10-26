@@ -61,6 +61,12 @@ class WebhelperPreloadTest(unittest.TestCase):
         args = [WEBHELPER, "--enable-features=A"]
         self.assertEqual(self.argv(*args, spec="stock"), args)
 
+    def test_disable_blink_features_is_forwarded(self):
+        out = self.argv(WEBHELPER, spec="--no-zygote --in-process-gpu -AudioServiceOutOfProcess --disable-blink-features=CSSBackdropFilter")
+        self.assertEqual(out, [WEBHELPER, "--no-zygote", "--in-process-gpu",
+                               "--disable-blink-features=CSSBackdropFilter",
+                               "--disable-features=AudioServiceOutOfProcess"])
+
     def test_an_empty_setting_means_the_default(self):
         self.assertIn("--no-zygote", self.argv(WEBHELPER, spec=""))
 

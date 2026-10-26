@@ -24,7 +24,11 @@ object AgentGuest {
         private set
     private const val TAG = "AgentGuest"
     private const val POLL_MS = 50L
+    private const val KEYBOARD_DEBOUNCE_MS = 250L
     private val lock = Any()
+    private val keyboardOffRunnable = Runnable {
+        steamKeyboard = false
+    }
     private var observer: FileObserver? = null
     private var lastFocusKey: String? = null
 
@@ -35,6 +39,7 @@ object AgentGuest {
             observer?.stopWatching()
             observer = null
             lastFocusKey = null
+            main.removeCallbacks(keyboardOffRunnable)
             main.post { steamKeyboard = false }
             val dir = dir(context)
             dir.deleteRecursively()
@@ -58,6 +63,7 @@ object AgentGuest {
         synchronized(lock) {
             observer?.stopWatching()
             observer = null
+            main.removeCallbacks(keyboardOffRunnable)
             main.post { steamKeyboard = false }
         }
     }
@@ -66,7 +72,12 @@ object AgentGuest {
         val showing = snapshot.optBoolean("steamKeyboard")
         synchronized(lock) {
             if (source !== observer) return
-            main.post { steamKeyboard = showing }
+            main.removeCallbacks(keyboardOffRunnable)
+            if (showing) {
+                main.post { steamKeyboard = true }
+            } else {
+                main.postDelayed(keyboardOffRunnable, KEYBOARD_DEBOUNCE_MS)
+            }
         }
         SessionEvents.record("keyboard.changed", mapOf("steamKeyboard" to showing, "seq" to snapshot.optInt("seq")))
     }
